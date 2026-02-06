@@ -94,6 +94,7 @@ export interface AuthResponse {
   success: boolean;
   message: string;
   token: string;
+  mustChangePassword?: boolean;
   user: {
     id: string;
     name: string;
@@ -115,6 +116,13 @@ export const authApi = {
     return apiFetch<AuthResponse>('/api/auth/login', {
       method: 'POST',
       body: JSON.stringify(data),
+    });
+  },
+
+  changePassword: (currentPassword: string, newPassword: string): Promise<{ success: boolean; message: string }> => {
+    return apiFetch('/api/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify({ currentPassword, newPassword }),
     });
   },
 
@@ -315,6 +323,7 @@ export const alertApi = {
 export interface VendorPayload {
   name: string;
   contact: string;
+  email: string;
   leadTimeDays?: number;
   productsSupplied?: string[];
 }
@@ -323,6 +332,7 @@ export interface VendorResponse {
   id: string;
   name: string;
   contact: string;
+  email?: string;
   leadTimeDays: number;
   productsSupplied: string[];
   status: 'PENDING' | 'APPROVED' | 'REJECTED';
@@ -377,7 +387,7 @@ export const vendorApi = {
     });
   },
 
-  /** Approve a vendor (OWNER only) */
+  /** Approve a vendor (OWNER only) – credentials sent to vendor's stored email */
   approveVendor: (id: string): Promise<SingleVendorResponse> => {
     return apiFetch<SingleVendorResponse>(`/api/vendors/${id}/approve`, {
       method: 'PUT',
@@ -392,5 +402,306 @@ export const vendorApi = {
     });
   },
 };
+
+// ── AI Demand Forecasting API ───────────────────────────────────
+
+export interface DemandPrediction {
+  predictedDailyDemand: number;
+  daysToStockout: number;
+  suggestedReorderQty: number;
+  confidence: number;
+  method: string;
+  productId?: string;
+  inferenceTimeMs?: number;
+}
+
+export interface PredictDemandPayload {
+  productId?: string;
+  salesHistory?: number[];
+  currentStock?: number;
+  leadTimeDays?: number;
+}
+
+export interface PredictDemandResponse {
+  success: boolean;
+  prediction: DemandPrediction;
+  product?: {
+    id: string;
+    name: string;
+    sku: string;
+    currentStock: number;
+  };
+}
+
+export interface RetrainResponse {
+  success: boolean;
+  message: string;
+  metrics?: {
+    mae: number;
+    r2: number;
+    model_path: string;
+  };
+}
+
+export interface AIHealthResponse {
+  success: boolean;
+  ai: {
+    success: boolean;
+    service: string;
+    status: string;
+  };
+}
+
+export const aiApi = {
+  /** Get demand prediction — pass productId OR full salesHistory payload */
+  predictDemand: (data: PredictDemandPayload): Promise<PredictDemandResponse> => {
+    return apiFetch<PredictDemandResponse>('/api/ai/predict-demand', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /** Trigger model retrain (OWNER only) */
+  retrain: (): Promise<RetrainResponse> => {
+    return apiFetch<RetrainResponse>('/api/ai/retrain', {
+      method: 'POST',
+    });
+  },
+
+  /** Check AI service health */
+  health: (): Promise<AIHealthResponse> => {
+    return apiFetch<AIHealthResponse>('/api/ai/health');
+  },
+};
+
+// ── AI Suggestion API ───────────────────────────────────────────
+
+export interface AiSuggestionResponse {
+  id: string;
+  productId: string;
+  productName: string;
+  productSku: string;
+  currentStock: number;
+  costPrice: number;
+  sellingPrice: number;
+  predictedDailyDemand: number;
+  daysToStockout: number;
+  suggestedReorderQty: number;
+  confidence: number;
+  method: string;
+  inferenceTimeMs?: number;
+  status: 'ACTIVE' | 'SUBMITTED' | 'EXPIRED';
+  orderId?: string;
+  createdBy?: { name: string; email: string };
+  snapshot?: {
+    productName: string;
+    productSku: string;
+    currentStock: number;
+    costPrice: number;
+    sellingPrice: number;
+    leadTimeDays: number;
+  };
+  createdAt: string;
+}
+
+export interface AiSuggestionListResponse {
+  success: boolean;
+  count: number;
+  suggestions: AiSuggestionResponse[];
+}
+
+export interface SingleAiSuggestionResponse {
+  success: boolean;
+  suggestion: AiSuggestionResponse;
+}
+
+export const suggestionApi = {
+  /** Generate AI suggestion for a product (MANAGER) */
+  generate: (productId: string): Promise<SingleAiSuggestionResponse> => {
+    return apiFetch<SingleAiSuggestionResponse>(`/api/inventory/${productId}/ai-suggestion`, {
+      method: 'POST',
+    });
+  },
+
+  /** List all suggestions (OWNER|MANAGER), optional status filter */
+  list: (status?: string): Promise<AiSuggestionListResponse> => {
+    const qs = status ? `?status=${status}` : '';
+    return apiFetch<AiSuggestionListResponse>(`/api/inventory/ai-suggestions${qs}`);
+  },
+
+  /** Get one suggestion */
+  get: (id: string): Promise<SingleAiSuggestionResponse> => {
+    return apiFetch<SingleAiSuggestionResponse>(`/api/inventory/ai-suggestions/${id}`);
+  },
+};
+
+// ── Order API ───────────────────────────────────────────────────
+
+export interface OrderResponse {
+  id: string;
+  productId: string;
+  productName: string;
+  productSku: string;
+  vendorId?: string;
+  vendorName: string;
+  quantity: number;
+  totalValue: number;
+  status: 'DRAFT' | 'PENDING_APPROVAL' | 'APPROVED' | 'CONFIRMED' | 'DISPATCHED' | 'IN_TRANSIT' | 'REJECTED' | 'DELIVERED' | 'VENDOR_REJECTED' | 'DELAY_REQUESTED';
+  aiRecommendation?: {
+    forecastedDemand: number;
+    recommendedQuantity: number;
+    confidence: number;
+    reasoning: string;
+  };
+  expectedDeliveryDate?: string;
+  actualDeliveryDate?: string;
+  confirmedAt?: string;
+  dispatchedAt?: string;
+  inTransitAt?: string;
+  rejectionReason?: string;
+  delayReason?: string;
+  newExpectedDate?: string;
+  vendorAction?: 'ACCEPT' | 'REJECT' | 'REQUEST_DELAY';
+  notes?: string;
+  createdBy?: { name: string; email: string };
+  approvedBy?: { name: string; email: string };
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface OrderListResponse {
+  success: boolean;
+  count: number;
+  orders: OrderResponse[];
+}
+
+export interface SingleOrderResponse {
+  success: boolean;
+  message?: string;
+  order: OrderResponse;
+}
+
+export interface AiReorderPayload {
+  productId: string;
+  aiSuggestionId: string;
+  finalQuantity: number;
+  vendorId: string;
+}
+
+export const orderApi = {
+  /** Submit AI-based reorder (MANAGER) */
+  submitAiReorder: (data: AiReorderPayload): Promise<SingleOrderResponse> => {
+    return apiFetch<SingleOrderResponse>('/api/orders/ai-reorder', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /** List all orders (OWNER|MANAGER), optional status filter */
+  list: (status?: string): Promise<OrderListResponse> => {
+    const qs = status ? `?status=${status}` : '';
+    return apiFetch<OrderListResponse>(`/api/orders${qs}`);
+  },
+
+  /** List pending orders (OWNER) */
+  pending: (): Promise<OrderListResponse> => {
+    return apiFetch<OrderListResponse>('/api/orders/pending');
+  },
+
+  /** Approve order (OWNER) */
+  approve: (id: string): Promise<SingleOrderResponse> => {
+    return apiFetch<SingleOrderResponse>(`/api/orders/${id}/approve`, {
+      method: 'POST',
+    });
+  },
+
+  /** Reject order (OWNER) */
+  reject: (id: string, reason?: string): Promise<SingleOrderResponse> => {
+    return apiFetch<SingleOrderResponse>(`/api/orders/${id}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+  },
+
+  /** List vendor orders (VENDOR) */
+  vendorOrders: (status?: string): Promise<OrderListResponse> => {
+    const qs = status ? `?status=${status}` : '';
+    return apiFetch<OrderListResponse>(`/api/orders/vendor${qs}`);
+  },
+
+  /** Vendor confirms an approved order (VENDOR) */
+  confirm: (id: string): Promise<SingleOrderResponse> => {
+    return apiFetch<SingleOrderResponse>(`/api/orders/${id}/confirm`, {
+      method: 'POST',
+    });
+  },
+
+  /** Vendor dispatches a confirmed order (VENDOR) */
+  dispatch: (id: string): Promise<SingleOrderResponse> => {
+    return apiFetch<SingleOrderResponse>(`/api/orders/${id}/dispatch`, {
+      method: 'POST',
+    });
+  },
+
+  /** Owner marks dispatched order as received (OWNER) */
+  markReceived: (id: string): Promise<SingleOrderResponse> => {
+    return apiFetch<SingleOrderResponse>(`/api/orders/${id}/received`, {
+      method: 'POST',
+    });
+  },
+
+  /** Vendor action on approved order: ACCEPT / REJECT / REQUEST_DELAY */
+  vendorAction: (
+    id: string,
+    action: 'ACCEPT' | 'REJECT' | 'REQUEST_DELAY',
+    reason?: string,
+    newExpectedDate?: string,
+  ): Promise<SingleOrderResponse> => {
+    return apiFetch<SingleOrderResponse>(`/api/orders/${id}/vendor-action`, {
+      method: 'POST',
+      body: JSON.stringify({ action, reason, newExpectedDate }),
+    });
+  },
+
+  /** Vendor updates delivery status: DISPATCHED → IN_TRANSIT → DELIVERED */
+  updateDeliveryStatus: (
+    id: string,
+    deliveryStatus: 'DISPATCHED' | 'IN_TRANSIT' | 'DELIVERED',
+  ): Promise<SingleOrderResponse> => {
+    return apiFetch<SingleOrderResponse>(`/api/orders/${id}/delivery-status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ deliveryStatus }),
+    });
+  },
+
+  /** Get vendor performance metrics (VENDOR) */
+  vendorPerformance: (): Promise<VendorPerformanceResponse> => {
+    return apiFetch<VendorPerformanceResponse>('/api/orders/vendor/performance');
+  },
+};
+
+export interface VendorPerformanceResponse {
+  success: boolean;
+  vendor: {
+    id: string;
+    name: string;
+    reliabilityScore: number;
+    totalOrders: number;
+    rating: number;
+    performanceMetrics: {
+      onTimeDeliveryRate?: number;
+      qualityScore?: number;
+      responseFintRate?: number;
+    };
+    orderBreakdown: {
+      approved: number;
+      confirmed: number;
+      dispatched: number;
+      inTransit: number;
+      delivered: number;
+      rejected: number;
+    };
+  };
+}
 
 export default apiFetch;

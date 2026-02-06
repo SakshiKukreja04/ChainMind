@@ -3,6 +3,13 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
 import { Boxes, Eye, EyeOff, Loader2 } from 'lucide-react';
 import { authApi } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
@@ -19,6 +26,20 @@ export default function Login() {
     email: '',
     password: '',
   });
+
+  // Change password dialog
+  const [showChangeDialog, setShowChangeDialog] = useState(false);
+  const [changingPassword, setChangingPassword] = useState(false);
+  const [pendingLoginData, setPendingLoginData] = useState<{ token: string; user: any; oldPassword: string } | null>(null);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
+
+  const completeLogin = (token: string, user: any) => {
+    login(token, user);
+    toast({ title: 'Welcome back!', description: 'Login successful' });
+    const targetDashboard = roleDefaultDashboard[user.role] || '/sme/dashboard';
+    navigate(targetDashboard);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -39,18 +60,14 @@ export default function Login() {
         password: formData.password,
       });
 
-      // Store in auth context (also persists to localStorage)
-      login(response.token, response.user as any);
-
-      toast({
-        title: 'Welcome back!',
-        description: 'Login successful',
-      });
-
-      // Redirect based on role
-      const role = response.user.role;
-      const targetDashboard = roleDefaultDashboard[role] || '/sme/dashboard';
-      navigate(targetDashboard);
+      if (response.mustChangePassword) {
+        // Store credentials temporarily to complete login after password change
+        login(response.token, response.user as any);
+        setPendingLoginData({ token: response.token, user: response.user, oldPassword: formData.password });
+        setShowChangeDialog(true);
+      } else {
+        completeLogin(response.token, response.user as any);
+      }
     } catch (error) {
       toast({
         title: 'Login Failed',
@@ -59,6 +76,29 @@ export default function Login() {
       });
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleChangePassword = async () => {
+    if (!pendingLoginData) return;
+    if (newPassword.length < 6) {
+      toast({ title: 'Error', description: 'Password must be at least 6 characters', variant: 'destructive' });
+      return;
+    }
+    if (newPassword !== confirmNewPassword) {
+      toast({ title: 'Error', description: 'Passwords do not match', variant: 'destructive' });
+      return;
+    }
+    setChangingPassword(true);
+    try {
+      await authApi.changePassword(pendingLoginData.oldPassword, newPassword);
+      toast({ title: 'Password Changed', description: 'Your password has been updated' });
+      setShowChangeDialog(false);
+      completeLogin(pendingLoginData.token, pendingLoginData.user);
+    } catch (err: any) {
+      toast({ title: 'Error', description: err?.message || 'Failed to change password', variant: 'destructive' });
+    } finally {
+      setChangingPassword(false);
     }
   };
 
@@ -169,6 +209,52 @@ export default function Login() {
           </div>
         </div>
       </div>
+
+      {/* Force Change Password Dialog */}
+      <Dialog open={showChangeDialog} onOpenChange={() => {}}>
+        <DialogContent className="sm:max-w-md" onPointerDownOutside={(e) => e.preventDefault()}>
+          <DialogHeader>
+            <DialogTitle>Change Your Password</DialogTitle>
+            <p className="text-sm text-muted-foreground mt-1">
+              You must set a new password before continuing.
+            </p>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="newPassword">New Password</Label>
+              <Input
+                id="newPassword"
+                type="password"
+                placeholder="Min 6 characters"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="confirmNewPassword">Confirm New Password</Label>
+              <Input
+                id="confirmNewPassword"
+                type="password"
+                placeholder="Repeat new password"
+                value={confirmNewPassword}
+                onChange={(e) => setConfirmNewPassword(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button onClick={handleChangePassword} disabled={changingPassword} className="w-full">
+              {changingPassword ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Updating…
+                </>
+              ) : (
+                'Set New Password'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

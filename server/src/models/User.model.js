@@ -78,6 +78,24 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+
+    /**
+     * For VENDOR users: links to their Vendor entity record
+     * Set when owner invites a vendor user
+     */
+    vendorEntityId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Vendor',
+      default: null,
+    },
+
+    /**
+     * Force password change on first login (for auto-created vendor accounts)
+     */
+    mustChangePassword: {
+      type: Boolean,
+      default: false,
+    },
   },
   {
     timestamps: true, // Auto-generates createdAt and updatedAt

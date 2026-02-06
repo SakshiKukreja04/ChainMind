@@ -25,7 +25,7 @@ const orderSchema = new mongoose.Schema(
     vendorId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Vendor',
-      required: true,
+      default: null,
     },
 
     /**
@@ -47,9 +47,59 @@ const orderSchema = new mongoose.Schema(
      */
     status: {
       type: String,
-      enum: ['DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'DELIVERED'],
+      enum: ['DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'REJECTED', 'CONFIRMED', 'DISPATCHED', 'IN_TRANSIT', 'DELIVERED', 'VENDOR_REJECTED', 'DELAY_REQUESTED'],
       required: true,
       default: 'DRAFT',
+    },
+
+    /**
+     * Vendor action taken on the order
+     * ACCEPT / REJECT / REQUEST_DELAY
+     */
+    vendorAction: {
+      type: String,
+      enum: ['ACCEPT', 'REJECT', 'REQUEST_DELAY'],
+      default: null,
+    },
+
+    /**
+     * Reason for delay (if vendor requests a delay)
+     */
+    delayReason: {
+      type: String,
+      default: null,
+    },
+
+    /**
+     * New expected date proposed by vendor on delay request
+     */
+    newExpectedDate: {
+      type: Date,
+      default: null,
+    },
+
+    /**
+     * Date when order was marked in-transit
+     */
+    inTransitAt: {
+      type: Date,
+      default: null,
+    },
+
+    /**
+     * Date when vendor confirmed the order
+     */
+    confirmedAt: {
+      type: Date,
+      default: null,
+    },
+
+    /**
+     * Date when vendor dispatched the order
+     */
+    dispatchedAt: {
+      type: Date,
+      default: null,
     },
 
     /**
@@ -82,9 +132,6 @@ const orderSchema = new mongoose.Schema(
     blockchainTxHash: {
       type: String,
       default: null,
-      unique: true,
-      sparse: true, // Allows multiple null values
-      index: true,
     },
 
     /**
@@ -146,8 +193,6 @@ const orderSchema = new mongoose.Schema(
      */
     poNumber: {
       type: String,
-      unique: true,
-      sparse: true,
       default: null,
     },
 
@@ -175,5 +220,6 @@ orderSchema.index({ businessId: 1 }); // Business orders
 orderSchema.index({ status: 1 }); // Filter by status
 orderSchema.index({ createdBy: 1 }); // User orders
 orderSchema.index({ businessId: 1, status: 1 }); // Business pending orders
+orderSchema.index({ vendorId: 1, status: 1 }); // Vendor + status queries
 
 module.exports = mongoose.model('Order', orderSchema);

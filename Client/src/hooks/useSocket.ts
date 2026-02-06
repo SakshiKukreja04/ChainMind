@@ -11,7 +11,14 @@ export type InventoryEvent =
   | 'vendor:pending-approval'
   | 'vendor:approved'
   | 'vendor:rejected'
-  | 'vendor:score-updated';
+  | 'vendor:score-updated'
+  | 'ai:suggestion-created'
+  | 'order:pending-approval'
+  | 'order:approved'
+  | 'order:rejected'
+  | 'order:confirmed'
+  | 'order:dispatched'
+  | 'order:delivered';
 
 const SOCKET_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 

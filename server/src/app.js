@@ -9,6 +9,9 @@ const healthRoutes = require('./routes/health.routes');
 const authRoutes = require('./routes/auth.routes');
 const productRoutes = require('./routes/product.routes');
 const vendorRoutes = require('./routes/vendor.routes');
+const aiRoutes = require('./routes/ai.routes');
+const inventoryRoutes = require('./routes/inventory.routes');
+const orderRoutes = require('./routes/order.routes');
 
 const app = express();
 
@@ -26,6 +29,9 @@ app.use('/', healthRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/vendors', vendorRoutes);
+app.use('/api/ai', aiRoutes);
+app.use('/api/inventory', inventoryRoutes);
+app.use('/api/orders', orderRoutes);
 
 /**
  * 404 Handler

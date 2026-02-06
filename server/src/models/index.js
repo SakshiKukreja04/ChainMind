@@ -10,6 +10,7 @@ const Product = require('./Product.model');
 const Vendor = require('./Vendor.model');
 const Order = require('./Order.model');
 const Alert = require('./Alert.model');
+const AiSuggestion = require('./AiSuggestion.model');
 
 module.exports = {
   User,
@@ -18,4 +19,5 @@ module.exports = {
   Vendor,
   Order,
   Alert,
+  AiSuggestion,
 };

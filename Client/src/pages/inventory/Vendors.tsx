@@ -36,6 +36,7 @@ export default function Vendors() {
   const [form, setForm] = useState<VendorPayload>({
     name: '',
     contact: '',
+    email: '',
     leadTimeDays: 7,
     productsSupplied: [],
   });
@@ -97,6 +98,10 @@ export default function Vendors() {
     }
     try {
       setSubmitting(true);
+      if (!form.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) {
+        toast({ title: 'Validation', description: 'A valid vendor email is required', variant: 'destructive' });
+        return;
+      }
       const payload: VendorPayload = {
         ...form,
         productsSupplied: productsInput
@@ -108,7 +113,7 @@ export default function Vendors() {
       setVendors((prev) => [res.vendor, ...prev]);
       toast({ title: 'Vendor submitted', description: `${res.vendor.name} — awaiting owner approval` });
       setAddOpen(false);
-      setForm({ name: '', contact: '', leadTimeDays: 7, productsSupplied: [] });
+      setForm({ name: '', contact: '', email: '', leadTimeDays: 7, productsSupplied: [] });
       setProductsInput('');
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to submit vendor';
@@ -164,8 +169,12 @@ export default function Vendors() {
                   <Input id="v-name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="ABC Pharma Suppliers" />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="v-contact">Contact (Phone/Email) *</Label>
+                  <Label htmlFor="v-contact">Contact (Phone) *</Label>
                   <Input id="v-contact" value={form.contact} onChange={(e) => setForm({ ...form, contact: e.target.value })} placeholder="9876543210" />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="v-email">Email Address *</Label>
+                  <Input id="v-email" type="email" value={form.email || ''} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="vendor@company.com" />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="v-lead">Lead Time (days)</Label>

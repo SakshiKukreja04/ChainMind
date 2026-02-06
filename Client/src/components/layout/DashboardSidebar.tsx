@@ -37,6 +37,7 @@ const smeOwnerMenu: SidebarItem[] = [
   { name: 'Analytics', path: '/sme/analytics', icon: BarChart3 },
   { name: 'AI Insights', path: '/sme/ai-insights', icon: Brain },
   { name: 'Approvals', path: '/sme/approvals', icon: CheckSquare },
+  { name: 'Reorder Requests', path: '/sme/approvals?tab=orders', icon: ShoppingCart },
   { name: 'Blockchain Audit', path: '/sme/blockchain', icon: Link2 },
   { name: 'Reports', path: '/sme/reports', icon: FileText },
   { name: 'Settings', path: '/sme/settings', icon: Settings },
@@ -132,7 +133,10 @@ export function DashboardSidebar({ role, userName }: DashboardSidebarProps) {
       <nav className="flex-1 overflow-y-auto py-4 px-2 scrollbar-thin">
         <ul className="space-y-1">
           {menu.map((item) => {
-            const isActive = location.pathname === item.path;
+            const [itemPath, itemSearch] = item.path.split('?');
+            const isActive = itemSearch
+              ? location.pathname === itemPath && location.search === `?${itemSearch}`
+              : location.pathname === itemPath && !menu.some((m) => m.path.startsWith(itemPath + '?') && location.search === `?${m.path.split('?')[1]}`);
             return (
               <li key={item.path}>
                 <Link

@@ -19,12 +19,23 @@ const vendorSchema = new mongoose.Schema(
 
     /**
      * Vendor contact information
-     * Email or phone number for communications
+     * Phone number for communications
      */
     contact: {
       type: String,
       required: true,
       trim: true,
+    },
+
+    /**
+     * Vendor email address
+     * Used to create login credentials when approved
+     */
+    email: {
+      type: String,
+      trim: true,
+      lowercase: true,
+      default: null,
     },
 
     /**

@@ -207,6 +207,7 @@ const login = async (req, res) => {
       success: true,
       message: 'Login successful',
       token: token,
+      mustChangePassword: !!user.mustChangePassword,
       user: {
         id: user._id,
         name: user.name,
@@ -280,7 +281,7 @@ const verify = async (req, res) => {
  */
 const inviteTeamMember = async (req, res) => {
   try {
-    const { name, email, password, role } = req.body;
+    const { name, email, password, role, vendorEntityId } = req.body;
     const inviterId = req.user.userId;
 
     // Get the inviter (must be OWNER)
@@ -335,6 +336,7 @@ const inviteTeamMember = async (req, res) => {
       role: role,
       businessId: inviter.businessId,
       isActive: true,
+      ...(role === 'VENDOR' && vendorEntityId ? { vendorEntityId } : {}),
     });
 
     await newMember.save();
@@ -415,10 +417,72 @@ const getTeamMembers = async (req, res) => {
   }
 };
 
+/**
+ * CHANGE PASSWORD
+ * POST /api/auth/change-password
+ * Headers: Authorization: Bearer <token>
+ *
+ * Request body:
+ * {
+ *   "currentPassword": "...",
+ *   "newPassword": "..."
+ * }
+ *
+ * Clears mustChangePassword flag on success.
+ */
+const changePassword = async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'currentPassword and newPassword are required',
+      });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: 'New password must be at least 6 characters',
+      });
+    }
+
+    const user = await User.findById(req.user.userId);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    const valid = await bcrypt.compare(currentPassword, user.passwordHash);
+    if (!valid) {
+      return res.status(401).json({ success: false, message: 'Current password is incorrect' });
+    }
+
+    user.passwordHash = await bcrypt.hash(newPassword, 10);
+    user.mustChangePassword = false;
+    await user.save();
+
+    console.log(`✓ Password changed: ${user.email}`);
+
+    res.status(200).json({
+      success: true,
+      message: 'Password changed successfully',
+    });
+  } catch (error) {
+    console.error('Change Password Error:', error.message);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to change password',
+      error: error.message,
+    });
+  }
+};
+
 module.exports = {
   signup,
   login,
   verify,
   inviteTeamMember,
   getTeamMembers,
+  changePassword,
 };

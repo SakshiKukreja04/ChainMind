@@ -5,6 +5,9 @@
 
 const { Vendor, User } = require('../models');
 const { getSocket } = require('../sockets');
+const bcrypt = require('bcrypt');
+const crypto = require('crypto');
+const { sendVendorCredentials } = require('../services/emailService');
 
 /**
  * POST /api/vendors
@@ -14,7 +17,7 @@ const { getSocket } = require('../sockets');
 const submitVendor = async (req, res) => {
   try {
     const { businessId, userId } = req.user;
-    const { name, contact, leadTimeDays, productsSupplied } = req.body;
+    const { name, contact, email, leadTimeDays, productsSupplied } = req.body;
 
     if (!name || !contact) {
       return res.status(400).json({
@@ -23,9 +26,17 @@ const submitVendor = async (req, res) => {
       });
     }
 
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return res.status(400).json({
+        success: false,
+        message: 'A valid vendor email address is required',
+      });
+    }
+
     const vendor = await Vendor.create({
       name: name.trim(),
       contact: contact.trim(),
+      email: email.trim().toLowerCase(),
       leadTimeDays: leadTimeDays || 7,
       productsSupplied: productsSupplied || [],
       businessId,
@@ -41,6 +52,7 @@ const submitVendor = async (req, res) => {
       id: vendor._id,
       name: vendor.name,
       contact: vendor.contact,
+      email: vendor.email,
       leadTimeDays: vendor.leadTimeDays,
       productsSupplied: vendor.productsSupplied,
       status: vendor.status,
@@ -91,6 +103,7 @@ const getPendingVendors = async (req, res) => {
         id: v._id,
         name: v.name,
         contact: v.contact,
+        email: v.email,
         leadTimeDays: v.leadTimeDays,
         productsSupplied: v.productsSupplied,
         status: v.status,
@@ -135,6 +148,7 @@ const getVendors = async (req, res) => {
         id: v._id,
         name: v.name,
         contact: v.contact,
+        email: v.email,
         leadTimeDays: v.leadTimeDays,
         productsSupplied: v.productsSupplied,
         status: v.status,
@@ -179,6 +193,7 @@ const getVendor = async (req, res) => {
         id: vendor._id,
         name: vendor.name,
         contact: vendor.contact,
+        email: vendor.email,
         leadTimeDays: vendor.leadTimeDays,
         productsSupplied: vendor.productsSupplied,
         status: vendor.status,
@@ -206,6 +221,8 @@ const getVendor = async (req, res) => {
 /**
  * PUT /api/vendors/:id/approve
  * SME Owner approves a vendor
+ * → Auto-creates a VENDOR user account
+ * → Emails login credentials to the vendor
  * Access: OWNER only
  */
 const approveVendor = async (req, res) => {
@@ -224,10 +241,61 @@ const approveVendor = async (req, res) => {
       });
     }
 
+    // Use the email stored during vendor submission
+    const vendorEmail = vendor.email;
+    if (!vendorEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(vendorEmail)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Vendor has no valid email on file. Cannot create login credentials.',
+      });
+    }
+
     vendor.status = 'APPROVED';
     vendor.isApproved = true;
     vendor.reliabilityScore = 100; // Initial trust score
     await vendor.save();
+
+    // ── Auto-create VENDOR user account ─────────────────────────
+    let vendorUser = null;
+    let tempPassword = null;
+
+    // Check if a user with this email already exists
+    {
+      const existingUser = await User.findOne({ email: vendorEmail.toLowerCase() });
+
+      if (!existingUser) {
+        // Generate strong random 12-char password
+        tempPassword = crypto.randomBytes(9).toString('base64url'); // ~12 chars
+        const passwordHash = await bcrypt.hash(tempPassword, 10);
+
+        vendorUser = await User.create({
+          name: vendor.name,
+          email: vendorEmail.toLowerCase(),
+          passwordHash,
+          role: 'VENDOR',
+          businessId,
+          vendorEntityId: vendor._id,
+          isActive: true,
+          mustChangePassword: true,
+        });
+
+        console.log(`✓ Vendor user auto-created: ${vendorUser.email} (vendorEntityId: ${vendor._id})`);
+
+        // Send credentials by email (non-blocking, don't fail approval if email fails)
+        const loginUrl = `${req.protocol}://${req.get('host')}`.replace(':5000', ':8080') + '/login';
+        sendVendorCredentials(vendorEmail, vendor.name, tempPassword, loginUrl).catch((err) => {
+          console.error(`⚠ Failed to email credentials to ${vendorEmail}:`, err.message);
+        });
+      } else {
+        // Link existing user to vendor entity if not already linked
+        if (!existingUser.vendorEntityId) {
+          existingUser.vendorEntityId = vendor._id;
+          await existingUser.save();
+        }
+        vendorUser = existingUser;
+        console.log(`✓ Existing user ${vendorEmail} linked to vendor ${vendor.name}`);
+      }
+    }
 
     await vendor.populate('submittedBy', 'name email');
 
@@ -235,12 +303,14 @@ const approveVendor = async (req, res) => {
       id: vendor._id,
       name: vendor.name,
       contact: vendor.contact,
+      email: vendor.email,
       status: vendor.status,
       reliabilityScore: vendor.reliabilityScore,
       submittedBy: {
         id: vendor.submittedBy?._id,
         name: vendor.submittedBy?.name,
       },
+      vendorUserId: vendorUser?._id || null,
     };
 
     const io = getSocket();
@@ -250,7 +320,8 @@ const approveVendor = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: `Vendor "${vendor.name}" approved`,
+      message: `Vendor "${vendor.name}" approved` +
+        (vendorUser ? '. Login credentials sent to ' + vendorEmail : ''),
       vendor: payload,
     });
   } catch (error) {
