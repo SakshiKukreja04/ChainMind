@@ -11,6 +11,7 @@ const { Order, Product, AiSuggestion, Vendor, VendorProduct, Alert } = require('
 const User = require('../models/User.model');
 const { getSocket } = require('../sockets');
 const { updateVendorScore, recalculateReliabilityScore } = require('../services/vendorScore.service');
+const { recordAuditEntry } = require('../services/auditTrail.service');
 
 /**
  * Helper: resolve the Vendor entity linked to a VENDOR user
@@ -166,6 +167,9 @@ const submitAiReorder = async (req, res) => {
       console.warn('Socket emit failed:', socketErr.message);
     }
 
+    // Audit trail
+    recordAuditEntry(order, 'ORDER_CREATED', req.user.userId, req.user.businessId);
+
     console.log(
       `[Order] AI-reorder submitted: ${product.name} qty=${finalQuantity} ` +
       `vendor=${vendor.name} (AI suggested ${suggestion.suggestedReorderQty}) → PENDING_APPROVAL`
@@ -316,6 +320,9 @@ const approveOrder = async (req, res) => {
       console.warn('Socket emit failed:', socketErr.message);
     }
 
+    // Audit trail
+    recordAuditEntry(order, 'ORDER_APPROVED', req.user.userId, req.user.businessId);
+
     console.log(`[Order] Approved: ${order.productId?.name} qty=${order.quantity}`);
 
     return res.json({
@@ -373,6 +380,9 @@ const rejectOrder = async (req, res) => {
     } catch (socketErr) {
       console.warn('Socket emit failed:', socketErr.message);
     }
+
+    // Audit trail
+    recordAuditEntry(order, 'ORDER_REJECTED', req.user.userId, req.user.businessId);
 
     console.log(`[Order] Rejected: ${order.productId?.name} qty=${order.quantity}`);
 
@@ -654,6 +664,9 @@ const markOrderReceived = async (req, res) => {
     } catch (socketErr) {
       console.warn('Socket emit failed:', socketErr.message);
     }
+
+    // Audit trail
+    recordAuditEntry(order, 'ORDER_DELIVERED', req.user.userId, req.user.businessId);
 
     console.log(`[Order] Received: ${order.productId?.name} qty=${order.quantity} → stock updated`);
 
@@ -1061,6 +1074,10 @@ const vendorUpdateOrderStatus = async (req, res) => {
     } catch (socketErr) {
       console.warn('Socket emit failed:', socketErr.message);
     }
+
+    // Audit trail
+    const auditAction = `ORDER_${newStatus}`;
+    recordAuditEntry(order, auditAction, req.user.userId, order.businessId);
 
     console.log(
       `[Order] Vendor status update: ${order.productId?.name} → ${newStatus} (vendor=${vendor.name})`,

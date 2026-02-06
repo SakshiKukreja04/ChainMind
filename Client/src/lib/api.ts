@@ -775,3 +775,69 @@ export const vendorProductApi = {
     });
   },
 };
+
+// ── Audit Trail API ─────────────────────────────────────────────
+
+export interface AuditLogEntry {
+  id: string;
+  orderId: string;
+  action: string;
+  dataHash: string;
+  previousHash: string | null;
+  status: 'VERIFIED' | 'PENDING';
+  timestamp: string;
+  createdBy: { name: string; email: string } | null;
+  businessId: string;
+}
+
+export interface AuditLogListResponse {
+  success: boolean;
+  count: number;
+  total: number;
+  page: number;
+  logs: AuditLogEntry[];
+}
+
+export interface AuditVerifyResponse {
+  success: boolean;
+  orderId: string;
+  chainValid: boolean;
+  entries: {
+    id: string;
+    action: string;
+    timestamp: string;
+    dataHash: string;
+    previousHash: string | null;
+    status: 'VERIFIED' | 'PENDING';
+    recomputedHash: string;
+    hashMatch: boolean;
+    prevMatch: boolean;
+  }[];
+}
+
+export const auditApi = {
+  /** List audit logs for the current business */
+  list: (params?: { orderId?: string; limit?: number; page?: number }): Promise<AuditLogListResponse> => {
+    const qs = new URLSearchParams();
+    if (params?.orderId) qs.set('orderId', params.orderId);
+    if (params?.limit) qs.set('limit', String(params.limit));
+    if (params?.page) qs.set('page', String(params.page));
+    const query = qs.toString();
+    return apiFetch<AuditLogListResponse>(`/api/audit/logs${query ? '?' + query : ''}`);
+  },
+
+  /** Get audit chain for a specific order */
+  orderChain: (orderId: string): Promise<AuditLogListResponse> => {
+    return apiFetch<AuditLogListResponse>(`/api/audit/logs/${orderId}`);
+  },
+
+  /** Verify full hash chain for an order */
+  verifyOrder: (orderId: string): Promise<AuditVerifyResponse> => {
+    return apiFetch<AuditVerifyResponse>(`/api/audit/verify/${orderId}`);
+  },
+
+  /** Verify a single audit entry */
+  verifyEntry: (entryId: string): Promise<{ success: boolean; valid: boolean; status: string }> => {
+    return apiFetch(`/api/audit/verify/entry/${entryId}`);
+  },
+};

@@ -14,6 +14,7 @@ const inventoryRoutes = require('./routes/inventory.routes');
 const orderRoutes = require('./routes/order.routes');
 const vendorProductRoutes = require('./routes/vendorProduct.routes');
 const ownerRoutes = require('./routes/owner.routes');
+const auditRoutes = require('./routes/audit.routes');
 
 const app = express();
 
@@ -36,6 +37,7 @@ app.use('/api/inventory', inventoryRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/vendor', vendorProductRoutes);
 app.use('/api/owner', ownerRoutes);
+app.use('/api/audit', auditRoutes);
 
 /**
  * 404 Handler
