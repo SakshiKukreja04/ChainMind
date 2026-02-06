@@ -96,6 +96,24 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+
+    /**
+     * User's phone number (optional)
+     */
+    phone: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+
+    /**
+     * Department or team (optional)
+     */
+    department: {
+      type: String,
+      default: null,
+      trim: true,
+    },
   },
   {
     timestamps: true, // Auto-generates createdAt and updatedAt

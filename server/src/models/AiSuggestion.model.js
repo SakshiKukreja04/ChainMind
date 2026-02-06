@@ -73,11 +73,11 @@ const aiSuggestionSchema = new mongoose.Schema(
       default: null,
     },
 
-    /** User who requested this AI suggestion */
+    /** User who requested this AI suggestion (null for auto-generated) */
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
-      required: true,
+      default: null,
     },
 
     /** Business scope */

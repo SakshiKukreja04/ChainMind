@@ -9,7 +9,7 @@
 
 const express = require('express');
 const router = express.Router();
-const { signup, login, verify, inviteTeamMember, getTeamMembers, changePassword } = require('../controllers/auth.controller');
+const { signup, login, verify, inviteTeamMember, getTeamMembers, changePassword, getProfile, updateProfile } = require('../controllers/auth.controller');
 const { authMiddleware } = require('../middleware/auth.middleware');
 
 /**
@@ -106,5 +106,17 @@ router.get('/team', authMiddleware, getTeamMembers);
  * Clears mustChangePassword flag for vendor accounts
  */
 router.post('/change-password', authMiddleware, changePassword);
+
+/**
+ * GET /api/auth/profile
+ * Get current user's profile (any authenticated user)
+ */
+router.get('/profile', authMiddleware, getProfile);
+
+/**
+ * PUT /api/auth/profile
+ * Update current user's profile (any authenticated user)
+ */
+router.put('/profile', authMiddleware, updateProfile);
 
 module.exports = router;

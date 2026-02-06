@@ -8,6 +8,8 @@ const app = require('./app');
 const { connectDB } = require('./config/db');
 const { initializeSocket } = require('./sockets');
 const { PORT } = require('./config/env');
+const { startNudgeScanner } = require('./services/stockMemoryService');
+const { initScheduler } = require('./services/reportScheduler.service');
 
 /**
  * Start Server
@@ -30,6 +32,12 @@ const startServer = async () => {
 
     // Start listening
     httpServer.listen(PORT, () => {
+      // Start AI nudge scanner (checks every 6 hours)
+      startNudgeScanner();
+
+      // Start report scheduler (cron-based report generation)
+      initScheduler().catch(err => console.warn('Report scheduler init warning:', err.message));
+
       console.log(`
 ╔═══════════════════════════════════════╗
 ║   ChainMind Backend - PHASE 1         ║

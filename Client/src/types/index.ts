@@ -107,3 +107,105 @@ export interface Alert {
   createdAt: string;
   read: boolean;
 }
+
+// ─── Cooperative Buying Types ─────────────────────────────────
+
+export interface CooperativeParticipant {
+  _id: string;
+  businessId: {
+    _id: string;
+    businessName: string;
+    location: string;
+    industry?: string;
+  };
+  ownerId: {
+    _id: string;
+    name: string;
+    email: string;
+  };
+  productId?: {
+    _id: string;
+    name: string;
+    sku: string;
+    currentStock: number;
+    minThreshold: number;
+    costPrice: number;
+  };
+  requestedQty: number;
+  approved: boolean;
+  approvedAt: string | null;
+}
+
+export interface CooperativeVendorSuggestion {
+  vendorId: string;
+  vendorProductId: string;
+  vendorName: string;
+  unitPrice: number;
+  bulkPrice: number;
+  minOrderQty: number;
+  leadTimeDays: number;
+}
+
+export interface CooperativeBuy {
+  _id: string;
+  productSpecHash: string;
+  productName: string;
+  category: string;
+  unitSize: string | null;
+  participants: CooperativeParticipant[];
+  totalQuantity: number;
+  estimatedSavingsPercent: number;
+  status: 'PROPOSED' | 'APPROVED' | 'ORDERED' | 'DELIVERED' | 'CANCELLED';
+  initiatedBy: {
+    _id: string;
+    name: string;
+    email: string;
+  };
+  initiatedByBusiness: {
+    _id: string;
+    businessName: string;
+    location: string;
+    industry?: string;
+  };
+  selectedVendorId: {
+    _id: string;
+    name: string;
+    email: string;
+    phone?: string;
+    reliabilityScore?: number;
+  } | null;
+  selectedVendorProductId: string | null;
+  orderId: string | null;
+  vendorSuggestions: CooperativeVendorSuggestion[];
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CooperativeDiscoveryMatch {
+  productId: string;
+  productName: string;
+  category: string;
+  currentStock: number;
+  minThreshold: number;
+  needsReorder: boolean;
+  businessId: string;
+  businessName: string;
+  location: string;
+  industry: string;
+}
+
+export interface CooperativeDiscoveryResult {
+  specHash: string;
+  product: {
+    id: string;
+    name: string;
+    category: string;
+    currentStock: number;
+    minThreshold: number;
+    needsReorder: boolean;
+  };
+  matches: CooperativeDiscoveryMatch[];
+  existingGroups: CooperativeBuy[];
+  vendorOptions: CooperativeVendorSuggestion[];
+}

@@ -1,9 +1,9 @@
 import { Outlet } from 'react-router-dom';
 import { DashboardSidebar } from './DashboardSidebar';
 import type { UserRole } from '@/types';
-import { Bell, Search } from 'lucide-react';
+import { Search } from 'lucide-react';
 import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
+import { NotificationPanel } from '@/components/NotificationPanel';
 
 interface DashboardLayoutProps {
   role: UserRole;
@@ -30,12 +30,7 @@ export function DashboardLayout({ role, userName }: DashboardLayoutProps) {
             </div>
             
             <div className="flex items-center gap-3">
-              <Button variant="ghost" size="icon" className="relative">
-                <Bell className="h-5 w-5" />
-                <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-destructive text-[10px] font-medium text-destructive-foreground flex items-center justify-center">
-                  3
-                </span>
-              </Button>
+              <NotificationPanel role={role} />
               <div className="h-8 w-8 rounded-full bg-primary flex items-center justify-center">
                 <span className="text-sm font-medium text-primary-foreground">
                   {userName.charAt(0).toUpperCase()}

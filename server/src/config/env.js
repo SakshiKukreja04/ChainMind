@@ -16,4 +16,8 @@ module.exports = {
   // Groq LLM – used for real-world health-context awareness layer
   GROQ_API_KEY: process.env.GROQ_API_KEY || '',
   GROQ_MODEL: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
+
+  // Postmark – vendor reorder emails
+  POSTMARK_SERVER_TOKEN: process.env.POSTMARK_SERVER_TOKEN || '',
+  EMAIL_FROM: process.env.EMAIL_FROM || '2023.sakshi.kukreja@ves.ac.in',
 };

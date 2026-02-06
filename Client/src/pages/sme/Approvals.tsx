@@ -247,7 +247,7 @@ export default function Approvals() {
     <div className="space-y-6 animate-fade-in">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Approvals</h1>
+          <h1 className="text-2xl font-bold text-foreground">Reorder & Approvals</h1>
           <p className="text-muted-foreground">Manage vendor and order approval requests.</p>
         </div>
         <Button variant="outline" size="icon" onClick={() => { fetchVendors(); fetchOrders(); }}>

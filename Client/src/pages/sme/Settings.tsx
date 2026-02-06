@@ -22,7 +22,7 @@ import {
 } from '@/components/ui/dialog';
 import { Building2, Bell, Shield, Users, Save, UserPlus, Loader2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { teamApi, TeamMember } from '@/lib/api';
+import { teamApi, ownerApi, TeamMember } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 
 export default function Settings() {
@@ -30,6 +30,7 @@ export default function Settings() {
   const { toast } = useToast();
   const [isInviteOpen, setIsInviteOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [isLoadingTeam, setIsLoadingTeam] = useState(true);
   const [inviteForm, setInviteForm] = useState({
@@ -39,9 +40,9 @@ export default function Settings() {
     role: 'MANAGER' as 'MANAGER' | 'VENDOR',
   });
   const [settings, setSettings] = useState({
-    businessName: 'HealthPlus Pharmacy',
-    industry: 'pharmacy',
-    location: 'New York, USA',
+    businessName: '',
+    industry: '',
+    location: '',
     currency: 'USD',
     stockAlertPreference: 'medium',
     aiAssistedReorder: true,
@@ -53,10 +54,43 @@ export default function Settings() {
     approvalReminders: true,
   });
 
-  // Fetch team members on mount
+  // Fetch business info + team members on mount
   useEffect(() => {
     fetchTeamMembers();
+    loadBusinessSettings();
   }, []);
+
+  const loadBusinessSettings = async () => {
+    try {
+      const res = await ownerApi.summary();
+      setSettings((prev) => ({
+        ...prev,
+        businessName: res.businessName || '',
+        industry: res.industry || '',
+        location: res.location || '',
+        currency: res.currency || 'USD',
+      }));
+    } catch (err) {
+      console.error('Failed to load business settings:', err);
+    }
+  };
+
+  const handleSaveSettings = async () => {
+    setIsSaving(true);
+    try {
+      await ownerApi.updateSettings({
+        businessName: settings.businessName,
+        industry: settings.industry,
+        location: settings.location,
+        currency: settings.currency,
+      });
+      toast({ title: 'Settings saved', description: 'Your business settings have been updated.' });
+    } catch (err: any) {
+      toast({ title: 'Error', description: err?.message || 'Failed to save settings', variant: 'destructive' });
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   const fetchTeamMembers = async () => {
     try {
@@ -234,9 +268,9 @@ export default function Settings() {
                 />
               </div>
             </div>
-            <Button className="mt-6">
-              <Save className="h-4 w-4" />
-              Save Changes
+            <Button className="mt-6" onClick={handleSaveSettings} disabled={isSaving}>
+              {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              {isSaving ? 'Saving...' : 'Save Changes'}
             </Button>
           </div>
         </TabsContent>

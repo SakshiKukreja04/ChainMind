@@ -126,8 +126,15 @@ export const authApi = {
     });
   },
 
-  getProfile: (): Promise<{ success: boolean; user: AuthResponse['user'] }> => {
+  getProfile: (): Promise<{ success: boolean; user: AuthResponse['user'] & { phone?: string; department?: string; createdAt?: string } }> => {
     return apiFetch('/api/auth/profile');
+  },
+
+  updateProfile: (data: { name?: string; phone?: string; department?: string }): Promise<{ success: boolean; message: string; user: AuthResponse['user'] & { phone?: string; department?: string; createdAt?: string } }> => {
+    return apiFetch('/api/auth/profile', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
   },
 };
 
@@ -851,4 +858,314 @@ export const auditApi = {
   verifyEntry: (entryId: string): Promise<{ success: boolean; valid: boolean; status: string }> => {
     return apiFetch(`/api/audit/verify/entry/${entryId}`);
   },
+};
+
+// ── Notification API ─────────────────────────────────────────
+export interface AppNotification {
+  id: string;
+  userId: string;
+  businessId: string;
+  type: 'REORDER_ALERT' | 'AI_NUDGE' | 'STOCK_UPDATE' | 'ORDER_STATUS';
+  title: string;
+  message: string;
+  referenceId?: string;
+  referenceType?: 'Order' | 'Product' | 'AiSuggestion';
+  read: boolean;
+  metadata?: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface NotificationListResponse {
+  success: boolean;
+  notifications: AppNotification[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export interface UnreadCountResponse {
+  success: boolean;
+  count: number;
+}
+
+export const notificationApi = {
+  /** List notifications (paginated) */
+  list: (params?: { page?: number; limit?: number; unreadOnly?: boolean }): Promise<NotificationListResponse> => {
+    const qs = new URLSearchParams();
+    if (params?.page) qs.set('page', String(params.page));
+    if (params?.limit) qs.set('limit', String(params.limit));
+    if (params?.unreadOnly) qs.set('unreadOnly', 'true');
+    const query = qs.toString();
+    return apiFetch<NotificationListResponse>(`/api/notifications${query ? '?' + query : ''}`);
+  },
+
+  /** Get unread count */
+  unreadCount: (): Promise<UnreadCountResponse> =>
+    apiFetch<UnreadCountResponse>('/api/notifications/unread-count'),
+
+  /** Mark one notification as read */
+  markRead: (id: string): Promise<{ success: boolean }> =>
+    apiFetch(`/api/notifications/${id}/read`, { method: 'PATCH' }),
+
+  /** Mark all as read */
+  markAllRead: (): Promise<{ success: boolean }> =>
+    apiFetch('/api/notifications/read-all', { method: 'PATCH' }),
+};
+
+// ── Owner Dashboard API ─────────────────────────────────────
+
+export interface OwnerSummaryResponse {
+  success: boolean;
+  currency: string;
+  businessName: string;
+  industry: string;
+  location: string;
+  phone: string;
+  summary: {
+    totalProducts: number;
+    totalInventoryValue: number;
+    stockAtRisk: number;
+    outOfStock: number;
+    awaitingReceipt: number;
+    totalOrders: number;
+    totalOrderValue: number;
+    pendingApprovals: number;
+    fulfillmentRate: number;
+    vendors: {
+      total: number;
+      approved: number;
+      pending: number;
+      avgReliability: number;
+    };
+    orderBreakdown: Record<string, { count: number; value: number }>;
+    lowStockProducts: {
+      id: string;
+      name: string;
+      sku: string;
+      currentStock: number;
+      minThreshold: number;
+      restockValue: number;
+    }[];
+  };
+}
+
+export interface OwnerAnalyticsResponse {
+  success: boolean;
+  currency: string;
+  analytics: {
+    monthlySales: {
+      year: number;
+      month: number;
+      totalRevenue: number;
+      orderCount: number;
+      totalUnits: number;
+    }[];
+    inventoryValuation: {
+      category: string;
+      totalCostValue: number;
+      totalSellingValue: number;
+      productCount: number;
+      totalUnits: number;
+      potentialMargin: number;
+    }[];
+    vendorReliability: {
+      id: string;
+      name: string;
+      reliabilityScore: number;
+      totalOrders: number;
+      leadTimeDays: number;
+      rating: number;
+      onTimeDeliveryRate: number;
+    }[];
+    fulfillmentTrend: {
+      year: number;
+      month: number;
+      delivered: number;
+      rejected: number;
+      total: number;
+      fulfillmentRate: number;
+    }[];
+    totals: {
+      totalSalesRevenue: number;
+      totalSalesOrders: number;
+      totalInventoryCostValue: number;
+      totalInventorySellingValue: number;
+      avgVendorReliability: number;
+    };
+  };
+}
+
+export interface OwnerSettingsPayload {
+  name?: string;
+  businessName?: string;
+  industry?: string;
+  location?: string;
+  currency?: string;
+  phone?: string;
+}
+
+export interface OwnerSettingsResponse {
+  success: boolean;
+  message: string;
+  user: { id: string; name: string; email: string; role: string; businessId: string };
+  business: { id: string; businessName: string; industry: string; location: string; currency: string; phone: string };
+}
+
+export const ownerApi = {
+  summary: (): Promise<OwnerSummaryResponse> =>
+    apiFetch<OwnerSummaryResponse>('/api/owner/summary'),
+
+  analytics: (months?: number): Promise<OwnerAnalyticsResponse> => {
+    const qs = months ? `?months=${months}` : '';
+    return apiFetch<OwnerAnalyticsResponse>(`/api/owner/analytics${qs}`);
+  },
+
+  updateSettings: (data: OwnerSettingsPayload): Promise<OwnerSettingsResponse> =>
+    apiFetch<OwnerSettingsResponse>('/api/owner/settings', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+};
+
+// ── Reports API ─────────────────────────────────────────────
+
+export interface ReportResponse {
+  success: boolean;
+  report: Record<string, unknown>;
+}
+
+export interface ReportScheduleItem {
+  id: string;
+  reportType: string;
+  cronExpression: string;
+  format: string;
+  isActive: boolean;
+  lastRunAt?: string;
+  nextRunAt?: string;
+  createdAt: string;
+}
+
+export interface ReportScheduleListResponse {
+  success: boolean;
+  count: number;
+  schedules: ReportScheduleItem[];
+}
+
+export const reportApi = {
+  /** Generate / get cached report JSON */
+  get: (type: string, params?: { months?: number; fresh?: boolean }): Promise<ReportResponse> => {
+    const qs = new URLSearchParams();
+    if (params?.months) qs.set('months', String(params.months));
+    if (params?.fresh) qs.set('fresh', 'true');
+    const query = qs.toString();
+    return apiFetch<ReportResponse>(`/api/reports/${type}${query ? '?' + query : ''}`);
+  },
+
+  /** Download report as file (returns blob URL) */
+  download: async (type: string, format: 'excel' | 'pdf' = 'excel', months?: number): Promise<void> => {
+    const qs = new URLSearchParams({ format });
+    if (months) qs.set('months', String(months));
+    const token = getToken();
+    const res = await fetch(`${API_BASE_URL}/api/reports/${type}/download?${qs}`, {
+      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    });
+    if (!res.ok) throw new Error('Download failed');
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${type}-report.${format === 'pdf' ? 'pdf' : 'xlsx'}`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  },
+
+  /** List report schedules */
+  listSchedules: (): Promise<ReportScheduleListResponse> =>
+    apiFetch<ReportScheduleListResponse>('/api/reports/schedules'),
+
+  /** Create a schedule */
+  createSchedule: (data: { reportType: string; cronExpression: string; format?: string }): Promise<{ success: boolean; schedule: ReportScheduleItem }> =>
+    apiFetch('/api/reports/schedules', { method: 'POST', body: JSON.stringify(data) }),
+
+  /** Delete a schedule */
+  deleteSchedule: (id: string): Promise<{ success: boolean }> =>
+    apiFetch(`/api/reports/schedules/${id}`, { method: 'DELETE' }),
+};
+
+// ─── Cooperative Buying API ───────────────────────────────────
+
+export const cooperativeApi = {
+  /** Discover co-buy opportunities for a product */
+  discover: (productId: string) =>
+    apiFetch<{ success: boolean; data: import('../types').CooperativeDiscoveryResult }>(
+      `/api/cooperative/discover/${productId}`,
+    ),
+
+  /** Browse open cooperative groups available to join */
+  openGroups: (params?: { page?: number; limit?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.page) qs.set('page', String(params.page));
+    if (params?.limit) qs.set('limit', String(params.limit));
+    const query = qs.toString();
+    return apiFetch<{
+      success: boolean;
+      data: { groups: import('../types').CooperativeBuy[]; total: number; page: number; limit: number };
+    }>(`/api/cooperative/open${query ? '?' + query : ''}`);
+  },
+
+  /** List my cooperatives */
+  list: (params?: { status?: string; page?: number; limit?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.status) qs.set('status', params.status);
+    if (params?.page) qs.set('page', String(params.page));
+    if (params?.limit) qs.set('limit', String(params.limit));
+    const query = qs.toString();
+    return apiFetch<{
+      success: boolean;
+      data: { groups: import('../types').CooperativeBuy[]; total: number; page: number; limit: number };
+    }>(`/api/cooperative${query ? '?' + query : ''}`);
+  },
+
+  /** Get a single cooperative detail */
+  get: (id: string) =>
+    apiFetch<{ success: boolean; data: import('../types').CooperativeBuy }>(
+      `/api/cooperative/${id}`,
+    ),
+
+  /** Create a new cooperative group */
+  create: (data: { productId: string; requestedQty: number; notes?: string }) =>
+    apiFetch<{ success: boolean; data: import('../types').CooperativeBuy }>(
+      '/api/cooperative/create',
+      { method: 'POST', body: JSON.stringify(data) },
+    ),
+
+  /** Join an existing cooperative group */
+  join: (id: string, data: { productId: string; requestedQty: number }) =>
+    apiFetch<{ success: boolean; data: import('../types').CooperativeBuy }>(
+      `/api/cooperative/${id}/join`,
+      { method: 'POST', body: JSON.stringify(data) },
+    ),
+
+  /** Approve participation */
+  approve: (id: string) =>
+    apiFetch<{ success: boolean; data: import('../types').CooperativeBuy }>(
+      `/api/cooperative/${id}/approve`,
+      { method: 'POST' },
+    ),
+
+  /** Select vendor for bulk order (initiator only) */
+  selectVendor: (id: string, vendorId: string) =>
+    apiFetch<{ success: boolean; data: import('../types').CooperativeBuy }>(
+      `/api/cooperative/${id}/select-vendor`,
+      { method: 'POST', body: JSON.stringify({ vendorId }) },
+    ),
+
+  /** Cancel a cooperative group (initiator only) */
+  cancel: (id: string) =>
+    apiFetch<{ success: boolean; data: import('../types').CooperativeBuy }>(
+      `/api/cooperative/${id}/cancel`,
+      { method: 'POST' },
+    ),
 };

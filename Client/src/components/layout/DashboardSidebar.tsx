@@ -20,7 +20,8 @@ import {
   Boxes,
   LogOut,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Handshake
 } from 'lucide-react';
 import type { UserRole } from '@/types';
 import { useState } from 'react';
@@ -36,10 +37,11 @@ const smeOwnerMenu: SidebarItem[] = [
   { name: 'Dashboard', path: '/sme/dashboard', icon: LayoutDashboard },
   { name: 'Analytics', path: '/sme/analytics', icon: BarChart3 },
   { name: 'AI Insights', path: '/sme/ai-insights', icon: Brain },
-  { name: 'Approvals', path: '/sme/approvals', icon: CheckSquare },
-  { name: 'Reorder Requests', path: '/sme/approvals?tab=orders', icon: ShoppingCart },
-  { name: 'Blockchain Audit', path: '/sme/blockchain', icon: Link2 },
+  { name: 'Reorder & Approvals', path: '/sme/approvals', icon: CheckSquare },
+  { name: 'Cooperative Buying', path: '/sme/cooperative-buy', icon: Handshake },
+  { name: 'Verification Audit', path: '/sme/blockchain', icon: Link2 },
   { name: 'Reports', path: '/sme/reports', icon: FileText },
+  { name: 'Notifications', path: '/sme/notifications', icon: Bell },
   { name: 'Settings', path: '/sme/settings', icon: Settings },
 ];
 
@@ -51,6 +53,7 @@ const inventoryManagerMenu: SidebarItem[] = [
   { name: 'Alerts', path: '/inventory/alerts', icon: Bell },
   { name: 'AI Suggestions', path: '/inventory/ai-suggestions', icon: Lightbulb },
   { name: 'Reports', path: '/inventory/reports', icon: FileText },
+  { name: 'Notifications', path: '/inventory/notifications', icon: Bell },
   { name: 'Profile', path: '/inventory/profile', icon: User },
 ];
 
@@ -60,6 +63,7 @@ const vendorMenu: SidebarItem[] = [
   { name: 'Product Catalog', path: '/vendor/catalog', icon: BookOpen },
   { name: 'Performance Score', path: '/vendor/performance', icon: Award },
   { name: 'Blockchain Log', path: '/vendor/blockchain', icon: Link2 },
+  { name: 'Notifications', path: '/vendor/notifications', icon: Bell },
   { name: 'Profile', path: '/vendor/profile', icon: User },
 ];
 

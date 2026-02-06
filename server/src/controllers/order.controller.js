@@ -12,6 +12,8 @@ const User = require('../models/User.model');
 const { getSocket } = require('../sockets');
 const { updateVendorScore, recalculateReliabilityScore } = require('../services/vendorScore.service');
 const { recordAuditEntry } = require('../services/auditTrail.service');
+const { onOrderDelivered, onOrderApproved, onOrderRejected, onReorderSubmitted } = require('../services/reorderIntelligenceService');
+const { autoGenerateSuggestionIfNeeded } = require('../services/autoSuggestionService');
 
 /**
  * Helper: resolve the Vendor entity linked to a VENDOR user
@@ -174,6 +176,12 @@ const submitAiReorder = async (req, res) => {
     // Audit trail
     recordAuditEntry(order, 'ORDER_CREATED', req.user.userId, req.user.businessId);
 
+    // Notify SME users about new reorder request
+    onReorderSubmitted(
+      { ...order.toObject(), productId: product, vendorId: vendor },
+      req.user.businessId,
+    );
+
     console.log(
       `[Order] AI-reorder submitted: ${product.name} qty=${finalQuantity} ` +
       `vendor=${vendor.name} (AI suggested ${suggestion.suggestedReorderQty}) → PENDING_APPROVAL`
@@ -300,7 +308,7 @@ const approveOrder = async (req, res) => {
       status: 'PENDING_APPROVAL',
     })
       .populate('productId', 'name sku')
-      .populate('vendorId', 'name');
+      .populate('vendorId', 'name email contact leadTimeDays');
 
     if (!order) {
       return res.status(404).json({
@@ -312,6 +320,14 @@ const approveOrder = async (req, res) => {
     order.status = 'APPROVED';
     order.approvedBy = req.user.userId;
     await order.save();
+
+    // Assign vendor to product if not yet assigned
+    if (order.vendorId && order.productId) {
+      await Product.findOneAndUpdate(
+        { _id: order.productId._id || order.productId, vendorId: null },
+        { vendorId: order.vendorId._id || order.vendorId }
+      );
+    }
 
     // Emit socket event
     try {
@@ -329,6 +345,9 @@ const approveOrder = async (req, res) => {
 
     // Audit trail
     recordAuditEntry(order, 'ORDER_APPROVED', req.user.userId, req.user.businessId);
+
+    // Reorder Intelligence: notify SME + email vendor
+    onOrderApproved(order, req.user.businessId);
 
     console.log(`[Order] Approved: ${order.productId?.name} qty=${order.quantity}`);
 
@@ -361,7 +380,7 @@ const rejectOrder = async (req, res) => {
       status: 'PENDING_APPROVAL',
     })
       .populate('productId', 'name sku')
-      .populate('vendorId', 'name');
+      .populate('vendorId', 'name email contact leadTimeDays');
 
     if (!order) {
       return res.status(404).json({
@@ -594,7 +613,7 @@ const markOrderReceived = async (req, res) => {
       status: 'DISPATCHED',
     })
       .populate('productId', 'name sku currentStock')
-      .populate('vendorId', 'name leadTimeDays');
+      .populate('vendorId', 'name email leadTimeDays');
 
     if (!order) {
       return res.status(404).json({ success: false, message: 'Dispatched order not found' });
@@ -602,9 +621,10 @@ const markOrderReceived = async (req, res) => {
 
     order.status = 'DELIVERED';
     order.actualDeliveryDate = new Date();
+    order.deliveredAt = new Date();
     await order.save();
 
-    // Update product stock
+    // Update product stock and assign vendor if not yet set
     if (order.productId) {
       const product = await Product.findById(order.productId._id || order.productId);
       if (product) {
@@ -613,6 +633,10 @@ const markOrderReceived = async (req, res) => {
         if (product.currentStock <= 0) product.status = 'out-of-stock';
         else if (product.currentStock <= product.minThreshold) product.status = 'low-stock';
         else product.status = 'in-stock';
+        // Assign vendor if product doesn't have one yet
+        if (!product.vendorId && order.vendorId) {
+          product.vendorId = order.vendorId._id || order.vendorId;
+        }
         await product.save();
       }
     }
@@ -678,6 +702,17 @@ const markOrderReceived = async (req, res) => {
 
     // Audit trail
     recordAuditEntry(order, 'ORDER_DELIVERED', req.user.userId, req.user.businessId);
+
+    // Reorder Intelligence: log history, retrain, notify, email vendor
+    onOrderDelivered(order, req.user.businessId);
+
+    // Auto-generate new AI suggestion if stock is still below threshold
+    if (order.productId) {
+      autoGenerateSuggestionIfNeeded(
+        order.productId._id || order.productId,
+        req.user.businessId,
+      ).catch((e) => console.warn('Auto-suggestion check failed:', e.message));
+    }
 
     console.log(`[Order] Received: ${order.productId?.name} qty=${order.quantity} → stock updated`);
 
@@ -776,6 +811,11 @@ const vendorOrderAction = async (req, res) => {
 
     console.log(`[Order] Vendor action ${action}: ${order.productId?.name} qty=${order.quantity}`);
 
+    // Reorder Intelligence: notify SME about vendor rejection
+    if (action === 'REJECT') {
+      onOrderRejected(order, order.businessId, order.rejectionReason);
+    }
+
     return res.json({
       success: true,
       message: `Order ${action.toLowerCase().replace('_', ' ')} successful`,
@@ -817,7 +857,7 @@ const updateDeliveryStatus = async (req, res) => {
       vendorId: vendor._id,
     })
       .populate('productId', 'name sku currentStock costPrice')
-      .populate('vendorId', 'name leadTimeDays');
+      .populate('vendorId', 'name email contact leadTimeDays');
 
     if (!order) {
       return res.status(404).json({ success: false, message: 'Order not found for this vendor' });
@@ -837,6 +877,7 @@ const updateDeliveryStatus = async (req, res) => {
     if (deliveryStatus === 'IN_TRANSIT') order.inTransitAt = new Date();
     if (deliveryStatus === 'DELIVERED') {
       order.actualDeliveryDate = new Date();
+      order.deliveredAt = new Date();
 
       // Update product stock
       if (order.productId) {
@@ -888,6 +929,11 @@ const updateDeliveryStatus = async (req, res) => {
     console.log(
       `[Delivery] ${deliveryStatus}: ${order.productId?.name} qty=${order.quantity} vendor=${order.vendorId?.name}`,
     );
+
+    // Reorder Intelligence: fire all DELIVERED side-effects
+    if (deliveryStatus === 'DELIVERED') {
+      onOrderDelivered(order, order.businessId);
+    }
 
     return res.json({
       success: true,
@@ -974,7 +1020,7 @@ const vendorUpdateOrderStatus = async (req, res) => {
       vendorId: vendor._id,
     })
       .populate('productId', 'name sku currentStock minThreshold costPrice')
-      .populate('vendorId', 'name contact leadTimeDays');
+      .populate('vendorId', 'name email contact leadTimeDays');
 
     if (!order) {
       return res.status(404).json({ success: false, message: 'Order not found for this vendor' });
@@ -1099,6 +1145,19 @@ const vendorUpdateOrderStatus = async (req, res) => {
     console.log(
       `[Order] Vendor status update: ${order.productId?.name} → ${newStatus} (vendor=${vendor.name})`,
     );
+
+    // Reorder Intelligence: fire all DELIVERED side-effects
+    if (newStatus === 'DELIVERED') {
+      onOrderDelivered(order, order.businessId);
+
+      // Auto-generate new AI suggestion if stock is still below threshold
+      if (order.productId) {
+        autoGenerateSuggestionIfNeeded(
+          order.productId._id || order.productId,
+          order.businessId,
+        ).catch((e) => console.warn('Auto-suggestion check failed:', e.message));
+      }
+    }
 
     return res.json({
       success: true,

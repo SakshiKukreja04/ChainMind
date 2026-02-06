@@ -478,6 +478,74 @@ const changePassword = async (req, res) => {
   }
 };
 
+/**
+ * GET /api/auth/profile
+ * Get current user's profile data
+ */
+const getProfile = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.userId).select('-password');
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    return res.json({
+      success: true,
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        businessId: user.businessId,
+        phone: user.phone || '',
+        department: user.department || '',
+        createdAt: user.createdAt,
+      },
+    });
+  } catch (error) {
+    console.error('Get Profile Error:', error.message);
+    res.status(500).json({ success: false, message: 'Failed to fetch profile' });
+  }
+};
+
+/**
+ * PUT /api/auth/profile
+ * Update current user's profile (name, phone, department)
+ */
+const updateProfile = async (req, res) => {
+  try {
+    const { name, phone, department } = req.body;
+
+    const user = await User.findById(req.user.userId);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    if (name) user.name = name.trim();
+    if (phone !== undefined) user.phone = phone.trim();
+    if (department !== undefined) user.department = department.trim();
+    await user.save();
+
+    return res.json({
+      success: true,
+      message: 'Profile updated',
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        businessId: user.businessId,
+        phone: user.phone || '',
+        department: user.department || '',
+        createdAt: user.createdAt,
+      },
+    });
+  } catch (error) {
+    console.error('Update Profile Error:', error.message);
+    res.status(500).json({ success: false, message: 'Failed to update profile' });
+  }
+};
+
 module.exports = {
   signup,
   login,
@@ -485,4 +553,6 @@ module.exports = {
   inviteTeamMember,
   getTeamMembers,
   changePassword,
+  getProfile,
+  updateProfile,
 };

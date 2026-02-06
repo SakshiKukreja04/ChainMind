@@ -14,6 +14,7 @@ import Home from "@/pages/Home";
 import Login from "@/pages/Login";
 import SignUp from "@/pages/SignUp";
 import NotFound from "@/pages/NotFound";
+import Notifications from "@/pages/Notifications";
 
 // SME Owner Pages
 import SMEDashboard from "@/pages/sme/Dashboard";
@@ -23,6 +24,8 @@ import Approvals from "@/pages/sme/Approvals";
 import BlockchainAudit from "@/pages/sme/Blockchain";
 import SMEReports from "@/pages/sme/Reports";
 import SMESettings from "@/pages/sme/Settings";
+import CooperativeBuying from "@/pages/sme/CooperativeBuying";
+import CooperativeBuyDetail from "@/pages/sme/CooperativeBuyDetail";
 
 // Inventory Manager Pages
 import InventoryDashboard from "@/pages/inventory/Dashboard";
@@ -67,6 +70,9 @@ const App = () => (
               <Route path="/sme/blockchain" element={<BlockchainAudit />} />
               <Route path="/sme/reports" element={<SMEReports />} />
               <Route path="/sme/settings" element={<SMESettings />} />
+              <Route path="/sme/cooperative-buy" element={<CooperativeBuying />} />
+              <Route path="/sme/cooperative-buy/:id" element={<CooperativeBuyDetail />} />
+              <Route path="/sme/notifications" element={<Notifications />} />
             </Route>
 
             {/* Inventory Manager Routes */}
@@ -79,6 +85,7 @@ const App = () => (
               <Route path="/inventory/ai-suggestions" element={<AISuggestions />} />
               <Route path="/inventory/reports" element={<SMEReports />} />
               <Route path="/inventory/profile" element={<InventoryProfile />} />
+              <Route path="/inventory/notifications" element={<Notifications />} />
             </Route>
 
             {/* Vendor Routes */}
@@ -89,6 +96,7 @@ const App = () => (
               <Route path="/vendor/performance" element={<Performance />} />
               <Route path="/vendor/blockchain" element={<VendorBlockchain />} />
               <Route path="/vendor/profile" element={<VendorProfile />} />
+              <Route path="/vendor/notifications" element={<Notifications />} />
             </Route>
 
             {/* 404 */}

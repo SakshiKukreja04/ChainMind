@@ -4,39 +4,41 @@ import { HealthGauge } from '@/components/dashboard/HealthGauge';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
-  inventoryApi,
-  vendorApi,
+  ownerApi,
   orderApi,
   suggestionApi,
-  alertApi,
-  type ProductResponse,
-  type VendorResponse,
+  type OwnerSummaryResponse,
   type OrderResponse,
   type AiSuggestionResponse,
 } from '@/lib/api';
 import { useSocket } from '@/hooks/useSocket';
 import { useToast } from '@/hooks/use-toast';
-import { 
-  Package, 
-  Users, 
-  AlertTriangle, 
-  DollarSign, 
+import {
+  Package,
+  Users,
+  AlertTriangle,
   ClipboardCheck,
   TrendingDown,
   Wallet,
   Brain,
   Truck,
-  ShoppingCart,
   Loader2,
   RefreshCw,
-  CheckCircle,
   Sparkles,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
+const CURRENCY_SYMBOLS: Record<string, string> = {
+  USD: '$', EUR: '€', GBP: '£', INR: '₹', JPY: '¥', CAD: 'C$', AUD: 'A$',
+};
+
+function fmt(value: number, currency: string) {
+  const sym = CURRENCY_SYMBOLS[currency] || currency + ' ';
+  return `${sym}${value.toLocaleString()}`;
+}
+
 export default function SMEDashboard() {
-  const [products, setProducts] = useState<ProductResponse[]>([]);
-  const [vendors, setVendors] = useState<VendorResponse[]>([]);
+  const [summary, setSummary] = useState<OwnerSummaryResponse | null>(null);
   const [orders, setOrders] = useState<OrderResponse[]>([]);
   const [suggestions, setSuggestions] = useState<AiSuggestionResponse[]>([]);
   const [loading, setLoading] = useState(true);
@@ -46,14 +48,12 @@ export default function SMEDashboard() {
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
-      const [prodRes, vendorRes, orderRes, sugRes] = await Promise.all([
-        inventoryApi.getProducts(),
-        vendorApi.getVendors(),
+      const [summaryRes, orderRes, sugRes] = await Promise.all([
+        ownerApi.summary(),
         orderApi.list(),
         suggestionApi.list(),
       ]);
-      setProducts(prodRes.products);
-      setVendors(vendorRes.vendors);
+      setSummary(summaryRes);
       setOrders(orderRes.orders);
       setSuggestions(sugRes.suggestions);
     } catch (err: any) {
@@ -80,38 +80,30 @@ export default function SMEDashboard() {
     return () => { u1(); u2(); u3(); u4(); u5(); u6(); u7(); u8(); u9(); u10(); };
   }, [on, fetchData]);
 
-  // Derived stats from live data
-  const totalProducts = products.length;
-  const totalVendors = vendors.filter((v) => v.status === 'APPROVED').length;
-  const stockAtRisk = products.filter((p) => p.status === 'low-stock' || p.status === 'out-of-stock').length;
-  const pendingOrders = orders.filter((o) => o.status === 'PENDING_APPROVAL').length;
-  const pendingVendors = vendors.filter((v) => v.status === 'PENDING').length;
-  const totalPendingApprovals = pendingOrders + pendingVendors;
-  const dispatchedOrders = orders.filter((o) => o.status === 'DISPATCHED');
-  const confirmedOrders = orders.filter((o) => o.status === 'CONFIRMED');
-  const deliveredOrders = orders.filter((o) => o.status === 'DELIVERED');
-
-  // Inventory value calculations
-  const totalInventoryValue = products.reduce((acc, p) => acc + (p.costPrice * p.currentStock), 0);
-  const overstockValue = products
-    .filter((p) => p.currentStock > p.minThreshold * 3)
-    .reduce((acc, p) => acc + (p.costPrice * (p.currentStock - p.minThreshold)), 0);
-  const requiredStockValue = products
-    .filter((p) => p.status === 'low-stock' || p.status === 'out-of-stock')
-    .reduce((acc, p) => acc + (p.costPrice * Math.max(0, p.minThreshold - p.currentStock)), 0);
-
-  // Health score: % of products in-stock
-  const inStockPct = totalProducts > 0
-    ? Math.round((products.filter((p) => p.status === 'in-stock').length / totalProducts) * 100)
-    : 0;
-
-  if (loading) {
+  if (loading || !summary) {
     return (
       <div className="flex items-center justify-center py-24">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     );
   }
+
+  const s = summary.summary;
+  const currency = summary.currency;
+
+  // Order pipeline counts from live orders
+  const pendingOrders = orders.filter((o) => o.status === 'PENDING_APPROVAL').length;
+  const approvedOrders = orders.filter((o) => o.status === 'APPROVED').length;
+  const confirmedOrders = orders.filter((o) => o.status === 'CONFIRMED');
+  const dispatchedOrders = orders.filter((o) => o.status === 'DISPATCHED' || o.status === 'IN_TRANSIT');
+  const deliveredOrders = orders.filter((o) => o.status === 'DELIVERED').length;
+
+  // Health score from summary
+  const inStockPct = s.totalProducts > 0
+    ? Math.round(((s.totalProducts - s.stockAtRisk - s.outOfStock) / s.totalProducts) * 100)
+    : 0;
+
+  const requiredStockValue = s.lowStockProducts.reduce((acc: number, p: any) => acc + p.restockValue, 0);
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -127,36 +119,11 @@ export default function SMEDashboard() {
 
       {/* Top Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-        <StatCard
-          title="Total Products"
-          value={totalProducts}
-          icon={Package}
-          variant="primary"
-        />
-        <StatCard
-          title="Approved Vendors"
-          value={totalVendors}
-          icon={Users}
-          variant="secondary"
-        />
-        <StatCard
-          title="Stock at Risk"
-          value={stockAtRisk}
-          icon={AlertTriangle}
-          variant="warning"
-        />
-        <StatCard
-          title="Total Orders"
-          value={orders.length}
-          icon={ShoppingCart}
-          variant="success"
-        />
-        <StatCard
-          title="Pending Approvals"
-          value={totalPendingApprovals}
-          icon={ClipboardCheck}
-          variant="accent"
-        />
+        <StatCard title="Total Products" value={s.totalProducts} icon={Package} variant="primary" />
+        <StatCard title="Approved Vendors" value={s.vendors.approved} icon={Users} variant="secondary" />
+        <StatCard title="Stock at Risk" value={s.stockAtRisk} icon={AlertTriangle} variant="warning" />
+        <StatCard title="Awaiting Receipt" value={s.awaitingReceipt} icon={Truck} variant="accent" />
+        <StatCard title="Pending Approvals" value={s.pendingApprovals} icon={ClipboardCheck} variant="success" />
       </div>
 
       {/* Business Health Section */}
@@ -165,6 +132,9 @@ export default function SMEDashboard() {
           <h3 className="text-lg font-semibold text-foreground mb-6">Business Health</h3>
           <div className="flex justify-center">
             <HealthGauge value={inStockPct} label="Inventory Health" />
+          </div>
+          <div className="text-center mt-2">
+            <span className="text-sm text-muted-foreground">Fulfillment Rate: <strong>{s.fulfillmentRate}%</strong></span>
           </div>
         </div>
 
@@ -176,18 +146,18 @@ export default function SMEDashboard() {
                 <div className="p-2 rounded-lg bg-warning/10">
                   <TrendingDown className="h-4 w-4 text-warning" />
                 </div>
-                <span className="font-medium text-foreground">Overstock Value</span>
+                <span className="font-medium text-foreground">Restock Needed</span>
               </div>
-              <span className="text-lg font-bold text-warning">${overstockValue.toLocaleString()}</span>
+              <span className="text-lg font-bold text-warning">{fmt(requiredStockValue, currency)}</span>
             </div>
             <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
               <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-success/10">
-                  <Package className="h-4 w-4 text-success" />
+                <div className="p-2 rounded-lg bg-destructive/10">
+                  <AlertTriangle className="h-4 w-4 text-destructive" />
                 </div>
-                <span className="font-medium text-foreground">Restock Needed</span>
+                <span className="font-medium text-foreground">Out of Stock</span>
               </div>
-              <span className="text-lg font-bold text-success">${requiredStockValue.toLocaleString()}</span>
+              <span className="text-lg font-bold text-destructive">{s.outOfStock} items</span>
             </div>
           </div>
         </div>
@@ -199,7 +169,7 @@ export default function SMEDashboard() {
               <Wallet className="h-6 w-6 text-primary" />
             </div>
             <p className="text-sm text-muted-foreground">Cash Tied in Inventory</p>
-            <p className="text-2xl font-bold text-foreground">${totalInventoryValue.toLocaleString()}</p>
+            <p className="text-2xl font-bold text-foreground">{fmt(s.totalInventoryValue, currency)}</p>
           </div>
         </div>
       </div>
@@ -216,7 +186,7 @@ export default function SMEDashboard() {
             <p className="text-xs text-muted-foreground mt-1">Pending Approval</p>
           </div>
           <div className="text-center p-3 rounded-lg bg-blue-50 dark:bg-blue-950/20">
-            <p className="text-2xl font-bold text-blue-600">{orders.filter((o) => o.status === 'APPROVED').length}</p>
+            <p className="text-2xl font-bold text-blue-600">{approvedOrders}</p>
             <p className="text-xs text-muted-foreground mt-1">Approved</p>
           </div>
           <div className="text-center p-3 rounded-lg bg-orange-50 dark:bg-orange-950/20">
@@ -225,10 +195,10 @@ export default function SMEDashboard() {
           </div>
           <div className="text-center p-3 rounded-lg bg-purple-50 dark:bg-purple-950/20">
             <p className="text-2xl font-bold text-purple-600">{dispatchedOrders.length}</p>
-            <p className="text-xs text-muted-foreground mt-1">Dispatched</p>
+            <p className="text-xs text-muted-foreground mt-1">In Transit</p>
           </div>
           <div className="text-center p-3 rounded-lg bg-green-50 dark:bg-green-950/20">
-            <p className="text-2xl font-bold text-green-600">{deliveredOrders.length}</p>
+            <p className="text-2xl font-bold text-green-600">{deliveredOrders}</p>
             <p className="text-xs text-muted-foreground mt-1">Delivered</p>
           </div>
         </div>
@@ -251,23 +221,23 @@ export default function SMEDashboard() {
             </p>
           ) : (
             <div className="space-y-3">
-              {suggestions.slice(0, 4).map((s) => {
-                const conf = Math.round(s.confidence * 100);
+              {suggestions.slice(0, 4).map((sg) => {
+                const conf = Math.round(sg.confidence * 100);
                 return (
-                  <div key={s.id} className="flex items-center justify-between p-3 rounded-lg border">
+                  <div key={sg.id} className="flex items-center justify-between p-3 rounded-lg border">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5">
-                        <p className="font-medium text-sm truncate">{s.productName}</p>
-                        {s.llmContext?.contextBoostApplied && (
+                        <p className="font-medium text-sm truncate">{sg.productName}</p>
+                        {sg.llmContext?.contextBoostApplied && (
                           <Sparkles className="h-3.5 w-3.5 text-primary shrink-0" title="LLM context boost applied" />
                         )}
                       </div>
                       <p className="text-xs text-muted-foreground">
-                        Demand: {s.predictedDailyDemand}/day • Reorder: {s.suggestedReorderQty} units
+                        Demand: {sg.predictedDailyDemand}/day • Reorder: {sg.suggestedReorderQty} units
                       </p>
-                      {s.llmContext?.contextBoostApplied && (
-                        <p className="text-xs text-primary mt-0.5 truncate" title={s.llmContext.reason}>
-                          ⚡ {s.llmContext.reason}
+                      {sg.llmContext?.contextBoostApplied && (
+                        <p className="text-xs text-primary mt-0.5 truncate" title={sg.llmContext.reason}>
+                          ⚡ {sg.llmContext.reason}
                         </p>
                       )}
                     </div>
@@ -290,7 +260,7 @@ export default function SMEDashboard() {
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
               <Truck className="h-5 w-5 text-purple-600" />
-              <h3 className="text-lg font-semibold text-foreground">Awaiting Receipt</h3>
+              <h3 className="text-lg font-semibold text-foreground">Awaiting Receipt ({s.awaitingReceipt})</h3>
             </div>
             <Link to="/sme/approvals" className="text-sm text-primary hover:underline">Manage</Link>
           </div>
@@ -309,7 +279,9 @@ export default function SMEDashboard() {
                       {o.dispatchedAt && ` • ${new Date(o.dispatchedAt).toLocaleDateString()}`}
                     </p>
                   </div>
-                  <Badge className="bg-purple-100 text-purple-800">Dispatched</Badge>
+                  <Badge className="bg-purple-100 text-purple-800">
+                    {o.status === 'IN_TRANSIT' ? 'In Transit' : 'Dispatched'}
+                  </Badge>
                 </div>
               ))}
             </div>

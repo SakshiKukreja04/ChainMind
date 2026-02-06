@@ -7,6 +7,8 @@ const { Product } = require('../models');
 const Alert = require('../models/Alert.model');
 const { checkThreshold } = require('../services/stock.service');
 const { getSocket } = require('../sockets');
+const { recordManualStockUpdate } = require('../services/stockMemoryService');
+const { autoGenerateSuggestionIfNeeded } = require('../services/autoSuggestionService');
 
 /**
  * GET /api/products
@@ -253,6 +255,9 @@ const updateStock = async (req, res) => {
     product.currentStock = newStock;
     await product.save();
 
+    // Record manual update for AI nudge system
+    recordManualStockUpdate(product._id);
+
     const io = getSocket();
     io.emit('inventory:stock-updated', {
       id: product._id,
@@ -265,6 +270,11 @@ const updateStock = async (req, res) => {
 
     // Threshold check
     await checkThreshold(product);
+
+    // Auto-generate AI suggestion if stock is below threshold
+    autoGenerateSuggestionIfNeeded(product._id, product.businessId).catch((e) =>
+      console.warn('Auto-suggestion check failed:', e.message)
+    );
 
     res.status(200).json({
       success: true,
@@ -306,6 +316,9 @@ const correctStock = async (req, res) => {
     }
 
     const previousStock = product.currentStock;
+    // Record manual correction for AI nudge system
+    recordManualStockUpdate(product._id);
+
     product.currentStock = actualStock;
     await product.save();
 
@@ -321,6 +334,11 @@ const correctStock = async (req, res) => {
 
     // Threshold check
     await checkThreshold(product);
+
+    // Auto-generate AI suggestion if stock is below threshold
+    autoGenerateSuggestionIfNeeded(product._id, product.businessId).catch((e) =>
+      console.warn('Auto-suggestion check failed:', e.message)
+    );
 
     res.status(200).json({
       success: true,

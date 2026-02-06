@@ -15,6 +15,9 @@ const orderRoutes = require('./routes/order.routes');
 const vendorProductRoutes = require('./routes/vendorProduct.routes');
 const ownerRoutes = require('./routes/owner.routes');
 const auditRoutes = require('./routes/audit.routes');
+const notificationRoutes = require('./routes/notification.routes');
+const reportRoutes = require('./routes/report.routes');
+const cooperativeRoutes = require('./routes/cooperative.routes');
 
 const app = express();
 
@@ -38,6 +41,9 @@ app.use('/api/orders', orderRoutes);
 app.use('/api/vendor', vendorProductRoutes);
 app.use('/api/owner', ownerRoutes);
 app.use('/api/audit', auditRoutes);
+app.use('/api/notifications', notificationRoutes);
+app.use('/api/reports', reportRoutes);
+app.use('/api/cooperative', cooperativeRoutes);
 
 /**
  * 404 Handler

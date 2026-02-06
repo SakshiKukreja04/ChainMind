@@ -18,7 +18,8 @@ export type InventoryEvent =
   | 'order:rejected'
   | 'order:confirmed'
   | 'order:dispatched'
-  | 'order:delivered';
+  | 'order:delivered'
+  | 'notification:new';
 
 const SOCKET_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 

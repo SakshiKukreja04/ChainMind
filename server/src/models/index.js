@@ -14,6 +14,10 @@ const AiSuggestion = require('./AiSuggestion.model');
 const VendorProduct = require('./VendorProduct.model');
 const AuditLog = require('./AuditLog.model');
 const SalesHistory = require('./SalesHistory.model');
+const Notification = require('./Notification.model');
+const ReportSnapshot = require('./ReportSnapshot.model');
+const ReportSchedule = require('./ReportSchedule.model');
+const CooperativeBuy = require('./CooperativeBuy.model');
 
 module.exports = {
   User,
@@ -26,4 +30,8 @@ module.exports = {
   VendorProduct,
   AuditLog,
   SalesHistory,
+  Notification,
+  ReportSnapshot,
+  ReportSchedule,
+  CooperativeBuy,
 };

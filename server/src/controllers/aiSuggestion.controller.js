@@ -29,21 +29,15 @@ const generateSuggestion = async (req, res) => {
     }
 
     // 2. Duplicate guard — block if an ACTIVE suggestion exists within 24h
-    const twentyFourAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    const existing = await AiSuggestion.findOne({
-      productId,
-      businessId: req.user.businessId,
-      status: 'ACTIVE',
-      createdAt: { $gte: twentyFourAgo },
-    });
-
-    if (existing) {
-      return res.status(409).json({
-        success: false,
-        message: 'An active AI suggestion already exists for this product (within 24h)',
-        suggestion: existing,
-      });
-    }
+    // 2. Expire any older ACTIVE suggestions for this product (replace with fresh one)
+    await AiSuggestion.updateMany(
+      {
+        productId,
+        businessId: req.user.businessId,
+        status: 'ACTIVE',
+      },
+      { $set: { status: 'EXPIRED' } },
+    );
 
     // 3. Build sales history from product stockHistory
     let history = [];
