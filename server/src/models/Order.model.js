@@ -29,6 +29,16 @@ const orderSchema = new mongoose.Schema(
     },
 
     /**
+     * Reference to the vendor catalog item
+     * Links to VendorProduct model (null for legacy orders)
+     */
+    vendorProductId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'VendorProduct',
+      default: null,
+    },
+
+    /**
      * Order quantity
      * Must be a positive number
      */
@@ -47,7 +57,7 @@ const orderSchema = new mongoose.Schema(
      */
     status: {
       type: String,
-      enum: ['DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'REJECTED', 'CONFIRMED', 'DISPATCHED', 'IN_TRANSIT', 'DELIVERED', 'VENDOR_REJECTED', 'DELAY_REQUESTED'],
+      enum: ['DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'REJECTED', 'ACCEPTED', 'CONFIRMED', 'DISPATCHED', 'IN_TRANSIT', 'DELIVERED', 'VENDOR_REJECTED', 'DELAY_REQUESTED'],
       required: true,
       default: 'DRAFT',
     },
@@ -98,6 +108,14 @@ const orderSchema = new mongoose.Schema(
      * Date when vendor dispatched the order
      */
     dispatchedAt: {
+      type: Date,
+      default: null,
+    },
+
+    /**
+     * Date when vendor marked order as delivered
+     */
+    deliveredAt: {
       type: Date,
       default: null,
     },

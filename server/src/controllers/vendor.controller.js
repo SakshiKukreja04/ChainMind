@@ -285,6 +285,11 @@ const approveVendor = async (req, res) => {
         const loginUrl = `${req.protocol}://${req.get('host')}`.replace(':5000', ':8080') + '/login';
         sendVendorCredentials(vendorEmail, vendor.name, tempPassword, loginUrl).catch((err) => {
           console.error(`⚠ Failed to email credentials to ${vendorEmail}:`, err.message);
+          // Log credentials as fallback when email fails (for manual sharing)
+          console.log(`📋 MANUAL CREDENTIAL FALLBACK for ${vendor.name}:`);
+          console.log(`   Email: ${vendorEmail}`);
+          console.log(`   Temporary Password: ${tempPassword}`);
+          console.log(`   Login URL: ${loginUrl}`);
         });
       } else {
         // Link existing user to vendor entity if not already linked
@@ -386,6 +391,87 @@ const rejectVendor = async (req, res) => {
   }
 };
 
+/**
+ * POST /api/vendors/:id/resend-credentials
+ * Resend/reset vendor login credentials
+ * → Generates new temporary password
+ * → Emails it (or logs to console if email fails)
+ * Access: OWNER only
+ */
+const resendVendorCredentials = async (req, res) => {
+  try {
+    const { businessId } = req.user;
+
+    const vendor = await Vendor.findOne({ _id: req.params.id, businessId });
+    if (!vendor) {
+      return res.status(404).json({ success: false, message: 'Vendor not found' });
+    }
+
+    if (vendor.status !== 'APPROVED') {
+      return res.status(400).json({
+        success: false,
+        message: 'Can only resend credentials for approved vendors',
+      });
+    }
+
+    // Find the vendor's user account
+    const vendorUser = await User.findOne({
+      email: vendor.email.toLowerCase(),
+      vendorEntityId: vendor._id,
+    });
+
+    if (!vendorUser) {
+      return res.status(404).json({
+        success: false,
+        message: 'No user account found for this vendor',
+      });
+    }
+
+    // Generate new temporary password
+    const tempPassword = crypto.randomBytes(9).toString('base64url');
+    const passwordHash = await bcrypt.hash(tempPassword, 10);
+
+    vendorUser.passwordHash = passwordHash;
+    vendorUser.mustChangePassword = true;
+    await vendorUser.save();
+
+    // Build login URL
+    const loginUrl = `${req.protocol}://${req.get('host')}`.replace(':5000', ':8080') + '/login';
+
+    // Try to email, with console fallback
+    let emailSent = false;
+    try {
+      await sendVendorCredentials(vendor.email, vendor.name, tempPassword, loginUrl);
+      emailSent = true;
+      console.log(`✓ Credentials resent to ${vendor.email}`);
+    } catch (err) {
+      console.error(`⚠ Failed to email credentials to ${vendor.email}:`, err.message);
+      console.log(`📋 MANUAL CREDENTIAL FALLBACK for ${vendor.name}:`);
+      console.log(`   Email: ${vendor.email}`);
+      console.log(`   Temporary Password: ${tempPassword}`);
+      console.log(`   Login URL: ${loginUrl}`);
+    }
+
+    res.status(200).json({
+      success: true,
+      message: emailSent
+        ? `Credentials sent to ${vendor.email}`
+        : `Password reset. Email failed - check server logs for credentials.`,
+      emailSent,
+      // Include credentials in response for admin to share manually
+      credentials: {
+        email: vendor.email,
+        temporaryPassword: tempPassword,
+        loginUrl,
+        note: 'Share these securely with the vendor',
+      },
+    });
+  } catch (error) {
+    console.error('Resend Vendor Credentials Error:', error.message);
+    res.status(500).json({ success: false, message: 'Failed to resend credentials', error: error.message });
+  }
+};
+
 module.exports = {
   submitVendor,
   getPendingVendors,
@@ -393,4 +479,5 @@ module.exports = {
   getVendor,
   approveVendor,
   rejectVendor,
+  resendVendorCredentials,
 };

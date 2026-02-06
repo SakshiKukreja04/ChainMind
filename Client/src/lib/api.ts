@@ -705,3 +705,73 @@ export interface VendorPerformanceResponse {
 }
 
 export default apiFetch;
+
+// ── Vendor Product Catalog API ──────────────────────────────────
+
+export interface VendorProductPayload {
+  name: string;
+  sku: string;
+  category?: string;
+  unitPrice: number;
+  minOrderQty?: number;
+  leadTimeDays?: number;
+}
+
+export interface VendorProductResponse {
+  id: string;
+  vendorId: string;
+  vendorName: string;
+  name: string;
+  sku: string;
+  category: string;
+  unitPrice: number;
+  minOrderQty: number;
+  leadTimeDays: number;
+  isActive: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface VendorProductListResponse {
+  success: boolean;
+  count: number;
+  products: VendorProductResponse[];
+}
+
+export interface SingleVendorProductResponse {
+  success: boolean;
+  message?: string;
+  product: VendorProductResponse;
+}
+
+export const vendorProductApi = {
+  /** List catalog products (VENDOR sees own, OWNER/MANAGER sees all) */
+  list: (vendorId?: string): Promise<VendorProductListResponse> => {
+    const qs = vendorId ? `?vendorId=${vendorId}` : '';
+    return apiFetch<VendorProductListResponse>(`/api/vendor/products${qs}`);
+  },
+
+  /** Create catalog product (VENDOR only) */
+  create: (data: VendorProductPayload): Promise<SingleVendorProductResponse> => {
+    return apiFetch<SingleVendorProductResponse>('/api/vendor/products', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /** Update catalog product (VENDOR only) */
+  update: (id: string, data: Partial<VendorProductPayload>): Promise<SingleVendorProductResponse> => {
+    return apiFetch<SingleVendorProductResponse>(`/api/vendor/products/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /** Toggle active/inactive (VENDOR only) */
+  toggleStatus: (id: string, isActive?: boolean): Promise<SingleVendorProductResponse> => {
+    return apiFetch<SingleVendorProductResponse>(`/api/vendor/products/${id}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify(isActive != null ? { isActive } : {}),
+    });
+  },
+};

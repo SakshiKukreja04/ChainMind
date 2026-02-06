@@ -1,53 +1,30 @@
 /**
  * Email Service
- * Sends transactional emails via Nodemailer (SMTP / Gmail)
+ * Sends transactional emails via Postmark API
  *
  * Environment variables:
- *   SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM
- *
- * Falls back to Ethereal (test) if SMTP_HOST is not set.
+ *   POSTMARK_SERVER_TOKEN, EMAIL_FROM
  */
 
-const nodemailer = require('nodemailer');
+const postmark = require('postmark');
 
-let transporter = null;
+let client = null;
 
 /**
- * Lazily initialise the Nodemailer transporter.
- * Uses real SMTP when env vars are present, otherwise Ethereal test account.
+ * Get or create Postmark client
  */
-async function getTransporter() {
-  if (transporter) return transporter;
+function getClient() {
+  if (client) return client;
 
-  const host = process.env.SMTP_HOST;
-  const port = Number(process.env.SMTP_PORT) || 587;
-  const user = process.env.SMTP_USER;
-  const pass = process.env.SMTP_PASS;
-
-  if (host && user && pass) {
-    transporter = nodemailer.createTransport({
-      host,
-      port,
-      secure: port === 465,
-      auth: { user, pass },
-    });
-    console.log(`✓ Email service configured: ${host}:${port}`);
-  } else {
-    // Ethereal test account – emails can be viewed at https://ethereal.email
-    const testAccount = await nodemailer.createTestAccount();
-    transporter = nodemailer.createTransport({
-      host: 'smtp.ethereal.email',
-      port: 587,
-      secure: false,
-      auth: {
-        user: testAccount.user,
-        pass: testAccount.pass,
-      },
-    });
-    console.log(`✓ Email service using Ethereal test account: ${testAccount.user}`);
+  const token = process.env.POSTMARK_SERVER_TOKEN;
+  if (!token || token === 'your_token_here') {
+    console.warn('⚠ POSTMARK_SERVER_TOKEN not configured - emails will be logged only');
+    return null;
   }
 
-  return transporter;
+  client = new postmark.ServerClient(token);
+  console.log('✓ Email service configured: Postmark API');
+  return client;
 }
 
 /**
@@ -59,15 +36,14 @@ async function getTransporter() {
  * @param {string} loginUrl       – URL for the login page
  */
 async function sendVendorCredentials(toEmail, vendorName, tempPassword, loginUrl) {
-  const transport = await getTransporter();
+  const postmarkClient = getClient();
+  const fromAddress = process.env.EMAIL_FROM || '2023.sakshi.kukreja@ves.ac.in';
 
-  const fromAddress = process.env.SMTP_FROM || '"ChainMind" <noreply@chainmind.io>';
-
-  const info = await transport.sendMail({
-    from: fromAddress,
-    to: toEmail,
-    subject: 'ChainMind — Your Vendor Account is Ready',
-    text: [
+  const emailData = {
+    From: fromAddress,
+    To: toEmail,
+    Subject: 'ChainMind — Your Vendor Account is Ready',
+    TextBody: [
       `Hello ${vendorName},`,
       '',
       'Your vendor account on ChainMind has been approved!',
@@ -76,12 +52,12 @@ async function sendVendorCredentials(toEmail, vendorName, tempPassword, loginUrl
       `Email     : ${toEmail}`,
       `Password  : ${tempPassword}`,
       '',
-      '⚠ You will be required to change your password on first login.',
+      'Please login and update your password.',
       '',
       'Regards,',
       'ChainMind Platform',
     ].join('\n'),
-    html: `
+    HtmlBody: `
       <div style="font-family:Arial,sans-serif;max-width:520px;margin:auto;padding:24px;border:1px solid #e5e7eb;border-radius:12px">
         <h2 style="color:#2563eb">Welcome to ChainMind</h2>
         <p>Hello <strong>${vendorName}</strong>,</p>
@@ -92,21 +68,24 @@ async function sendVendorCredentials(toEmail, vendorName, tempPassword, loginUrl
           <tr><td style="padding:8px 0;color:#6b7280">Password</td><td style="padding:8px 0"><code>${tempPassword}</code></td></tr>
         </table>
         <p style="background:#fef3c7;padding:12px;border-radius:8px;font-size:14px">
-          ⚠ <strong>You must change your password on first login.</strong>
+          ⚠ <strong>Please login and update your password.</strong>
         </p>
         <p style="color:#9ca3af;font-size:12px;margin-top:24px">This is an automated message from ChainMind. Do not reply.</p>
       </div>
     `,
-  });
+  };
 
-  // If Ethereal, log the preview URL
-  const previewUrl = nodemailer.getTestMessageUrl(info);
-  if (previewUrl) {
-    console.log(`📧 Preview vendor email: ${previewUrl}`);
+  // If Postmark not configured, log and return mock response
+  if (!postmarkClient) {
+    console.log('📧 [DEV MODE] Email would be sent:');
+    console.log(`   To: ${toEmail}`);
+    console.log(`   Subject: ${emailData.Subject}`);
+    return { MessageID: 'dev-mode-no-send', To: toEmail };
   }
 
-  console.log(`✓ Vendor credentials emailed to ${toEmail} (msgId: ${info.messageId})`);
-  return info;
+  const result = await postmarkClient.sendEmail(emailData);
+  console.log(`✓ Vendor credentials emailed to ${toEmail} (msgId: ${result.MessageID})`);
+  return result;
 }
 
 module.exports = { sendVendorCredentials };

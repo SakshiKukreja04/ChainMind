@@ -12,6 +12,8 @@ const vendorRoutes = require('./routes/vendor.routes');
 const aiRoutes = require('./routes/ai.routes');
 const inventoryRoutes = require('./routes/inventory.routes');
 const orderRoutes = require('./routes/order.routes');
+const vendorProductRoutes = require('./routes/vendorProduct.routes');
+const ownerRoutes = require('./routes/owner.routes');
 
 const app = express();
 
@@ -32,6 +34,8 @@ app.use('/api/vendors', vendorRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/inventory', inventoryRoutes);
 app.use('/api/orders', orderRoutes);
+app.use('/api/vendor', vendorProductRoutes);
+app.use('/api/owner', ownerRoutes);
 
 /**
  * 404 Handler

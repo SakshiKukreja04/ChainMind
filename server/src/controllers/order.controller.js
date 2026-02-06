@@ -7,10 +7,10 @@
  *   4. List all orders (Owner or Manager)
  */
 
-const { Order, Product, AiSuggestion, Vendor } = require('../models');
+const { Order, Product, AiSuggestion, Vendor, VendorProduct, Alert } = require('../models');
 const User = require('../models/User.model');
 const { getSocket } = require('../sockets');
-const { updateVendorScore } = require('../services/vendorScore.service');
+const { updateVendorScore, recalculateReliabilityScore } = require('../services/vendorScore.service');
 
 /**
  * Helper: resolve the Vendor entity linked to a VENDOR user
@@ -41,7 +41,7 @@ async function resolveVendorForUser(user) {
 // ── POST /api/orders/ai-reorder ─────────────────────────────────
 const submitAiReorder = async (req, res) => {
   try {
-    const { productId, aiSuggestionId, finalQuantity, vendorId } = req.body;
+    const { productId, aiSuggestionId, finalQuantity, vendorId, vendorProductId } = req.body;
 
     if (!productId || !aiSuggestionId || !finalQuantity || !vendorId) {
       return res.status(400).json({
@@ -92,17 +92,44 @@ const submitAiReorder = async (req, res) => {
       });
     }
 
-    // 3. Create Order with PENDING_APPROVAL status
+    // 2c. Validate vendorProductId if provided
+    let vendorProduct = null;
+    if (vendorProductId) {
+      vendorProduct = await VendorProduct.findOne({
+        _id: vendorProductId,
+        vendorId: vendor._id,
+        isActive: true,
+      });
+      if (!vendorProduct) {
+        return res.status(404).json({
+          success: false,
+          message: 'Vendor catalog product not found or inactive',
+        });
+      }
+      if (finalQuantity < vendorProduct.minOrderQty) {
+        return res.status(400).json({
+          success: false,
+          message: `Quantity must be ≥ ${vendorProduct.minOrderQty} (vendor minimum)`,
+        });
+      }
+    }
+
+    // 3. Calculate total value from vendorProduct price if available
+    const unitCost = vendorProduct ? vendorProduct.unitPrice : (product.costPrice || 0);
+    const leadTime = vendorProduct ? vendorProduct.leadTimeDays : vendor.leadTimeDays;
+
+    // 4. Create Order with PENDING_APPROVAL status
     const order = await Order.create({
       productId: product._id,
       vendorId: vendor._id,
+      vendorProductId: vendorProduct?._id || null,
       quantity: finalQuantity,
       status: 'PENDING_APPROVAL',
       createdBy: req.user.userId,
       businessId: req.user.businessId,
-      totalValue: finalQuantity * (product.costPrice || 0),
-      expectedDeliveryDate: vendor.leadTimeDays
-        ? new Date(Date.now() + vendor.leadTimeDays * 24 * 60 * 60 * 1000)
+      totalValue: finalQuantity * unitCost,
+      expectedDeliveryDate: leadTime
+        ? new Date(Date.now() + leadTime * 24 * 60 * 60 * 1000)
         : null,
       aiRecommendation: {
         forecastedDemand: suggestion.predictedDailyDemand,
@@ -133,6 +160,7 @@ const submitAiReorder = async (req, res) => {
         daysToStockout: suggestion.daysToStockout,
         totalValue: order.totalValue,
         status: order.status,
+        vendorProductId: order.vendorProductId || null,
       });
     } catch (socketErr) {
       console.warn('Socket emit failed:', socketErr.message);
@@ -152,6 +180,7 @@ const submitAiReorder = async (req, res) => {
         productName: product.name,
         vendorId: vendor._id,
         vendorName: vendor.name,
+        vendorProductId: order.vendorProductId || null,
         quantity: order.quantity,
         totalValue: order.totalValue,
         status: order.status,
@@ -883,6 +912,231 @@ const getVendorPerformance = async (req, res) => {
   }
 };
 
+// ═══════════════════════════════════════════════════════════════
+// PUT /api/vendor/orders/:orderId/status
+// Unified vendor order-status update with reliability + stock + sockets
+// ═══════════════════════════════════════════════════════════════
+const VENDOR_TRANSITIONS = {
+  APPROVED:   'ACCEPTED',
+  ACCEPTED:   'DISPATCHED',
+  DISPATCHED: 'DELIVERED',
+};
+
+const vendorUpdateOrderStatus = async (req, res) => {
+  try {
+    // ── Resolve vendor entity ──────────────────────────────
+    const vendor = await resolveVendorForUser(req.user);
+    if (!vendor) {
+      return res.status(403).json({ success: false, message: 'Vendor record not found' });
+    }
+
+    const { status: newStatus } = req.body;
+    if (!newStatus || !['ACCEPTED', 'DISPATCHED', 'DELIVERED'].includes(newStatus)) {
+      return res.status(400).json({
+        success: false,
+        message: 'status must be ACCEPTED, DISPATCHED, or DELIVERED',
+      });
+    }
+
+    // ── Load order (must belong to this vendor) ────────────
+    const order = await Order.findOne({
+      _id: req.params.orderId,
+      vendorId: vendor._id,
+    })
+      .populate('productId', 'name sku currentStock minThreshold costPrice')
+      .populate('vendorId', 'name contact leadTimeDays');
+
+    if (!order) {
+      return res.status(404).json({ success: false, message: 'Order not found for this vendor' });
+    }
+
+    // ── Validate transition ────────────────────────────────
+    const expectedNext = VENDOR_TRANSITIONS[order.status];
+    if (expectedNext !== newStatus) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot transition from ${order.status} to ${newStatus}. Expected: ${expectedNext || 'N/A'}`,
+      });
+    }
+
+    // ── Apply status + timestamps ──────────────────────────
+    order.status = newStatus;
+
+    if (newStatus === 'ACCEPTED') {
+      order.confirmedAt = new Date();
+    }
+    if (newStatus === 'DISPATCHED') {
+      order.dispatchedAt = new Date();
+    }
+    if (newStatus === 'DELIVERED') {
+      order.deliveredAt = new Date();
+      order.actualDeliveryDate = new Date();
+    }
+
+    await order.save();
+
+    // ── DELIVERED side-effects ──────────────────────────────
+    if (newStatus === 'DELIVERED') {
+      // 1. Increase product stock
+      if (order.productId) {
+        const product = await Product.findById(order.productId._id || order.productId);
+        if (product) {
+          const prevStock = product.currentStock;
+          product.currentStock += order.quantity;
+          await product.save();
+
+          // Emit stock:update
+          try {
+            const io = getSocket();
+            io.emit('stock:update', {
+              productId: product._id,
+              productName: product.name,
+              sku: product.sku,
+              previousStock: prevStock,
+              currentStock: product.currentStock,
+              addedQty: order.quantity,
+              businessId: order.businessId,
+            });
+          } catch {}
+
+          // 2. Resolve LOW_STOCK / OUT_OF_STOCK alerts if stock is now above threshold
+          if (product.currentStock >= product.minThreshold) {
+            const resolved = await Alert.updateMany(
+              {
+                productId: product._id,
+                businessId: order.businessId,
+                type: { $in: ['LOW_STOCK', 'OUT_OF_STOCK'] },
+                isActive: true,
+              },
+              { $set: { isActive: false } },
+            );
+
+            if (resolved.modifiedCount > 0) {
+              try {
+                const io = getSocket();
+                io.emit('alert:resolved', {
+                  productId: product._id,
+                  productName: product.name,
+                  currentStock: product.currentStock,
+                  minThreshold: product.minThreshold,
+                  businessId: order.businessId,
+                  resolvedCount: resolved.modifiedCount,
+                });
+              } catch {}
+            }
+          }
+        }
+      }
+
+      // 3. Recalculate vendor reliability score
+      recalculateReliabilityScore(vendor._id).catch((e) =>
+        console.warn('Reliability recalc failed:', e.message),
+      );
+    }
+
+    // ── Socket.IO emissions ────────────────────────────────
+    const socketPayload = {
+      orderId: order._id,
+      status: order.status,
+      vendorId: vendor._id,
+      businessId: order.businessId,
+    };
+
+    try {
+      const io = getSocket();
+      // Broadcast to SME Owner & Inventory Manager
+      io.emit('order:status-change', socketPayload);
+
+      // Extra delivery event for SME Owner dashboard
+      if (newStatus === 'DISPATCHED' || newStatus === 'DELIVERED') {
+        io.emit('vendor:delivery-update', {
+          ...socketPayload,
+          vendorName: order.vendorId?.name,
+          productName: order.productId?.name,
+          dispatchedAt: order.dispatchedAt,
+          deliveredAt: order.deliveredAt,
+          actualDeliveryDate: order.actualDeliveryDate,
+        });
+      }
+    } catch (socketErr) {
+      console.warn('Socket emit failed:', socketErr.message);
+    }
+
+    console.log(
+      `[Order] Vendor status update: ${order.productId?.name} → ${newStatus} (vendor=${vendor.name})`,
+    );
+
+    return res.json({
+      success: true,
+      message: `Order status updated to ${newStatus}`,
+      order: {
+        id: order._id,
+        productName: order.productId?.name,
+        vendorName: order.vendorId?.name,
+        quantity: order.quantity,
+        totalValue: order.totalValue,
+        status: order.status,
+        confirmedAt: order.confirmedAt,
+        dispatchedAt: order.dispatchedAt,
+        deliveredAt: order.deliveredAt,
+        actualDeliveryDate: order.actualDeliveryDate,
+        expectedDeliveryDate: order.expectedDeliveryDate,
+      },
+    });
+  } catch (err) {
+    console.error('vendorUpdateOrderStatus error:', err);
+    return res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+};
+
+// ═══════════════════════════════════════════════════════════════
+// GET /api/owner/orders/tracking
+// Owner sees DISPATCHED + DELIVERED orders with vendor & timestamps
+// ═══════════════════════════════════════════════════════════════
+const getOwnerOrderTracking = async (req, res) => {
+  try {
+    const orders = await Order.find({
+      businessId: req.user.businessId,
+      status: { $in: ['DISPATCHED', 'DELIVERED'] },
+    })
+      .sort({ updatedAt: -1 })
+      .populate('productId', 'name sku currentStock')
+      .populate('vendorId', 'name contact leadTimeDays reliabilityScore')
+      .populate('createdBy', 'name email')
+      .populate('approvedBy', 'name email')
+      .lean();
+
+    return res.json({
+      success: true,
+      count: orders.length,
+      orders: orders.map((o) => ({
+        id: o._id,
+        productId: o.productId?._id || o.productId,
+        productName: o.productId?.name || 'Unknown',
+        productSku: o.productId?.sku || '',
+        vendorId: o.vendorId?._id || o.vendorId,
+        vendorName: o.vendorId?.name || 'Unassigned',
+        vendorReliabilityScore: o.vendorId?.reliabilityScore ?? null,
+        quantity: o.quantity,
+        totalValue: o.totalValue,
+        status: o.status,
+        expectedDeliveryDate: o.expectedDeliveryDate,
+        actualDeliveryDate: o.actualDeliveryDate,
+        confirmedAt: o.confirmedAt,
+        dispatchedAt: o.dispatchedAt,
+        deliveredAt: o.deliveredAt,
+        createdBy: o.createdBy,
+        approvedBy: o.approvedBy,
+        createdAt: o.createdAt,
+        updatedAt: o.updatedAt,
+      })),
+    });
+  } catch (err) {
+    console.error('getOwnerOrderTracking error:', err);
+    return res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+};
+
 module.exports = {
   submitAiReorder,
   listOrders,
@@ -896,4 +1150,6 @@ module.exports = {
   vendorOrderAction,
   updateDeliveryStatus,
   getVendorPerformance,
+  vendorUpdateOrderStatus,
+  getOwnerOrderTracking,
 };

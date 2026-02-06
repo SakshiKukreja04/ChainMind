@@ -14,6 +14,7 @@ const {
   getVendor,
   approveVendor,
   rejectVendor,
+  resendVendorCredentials,
 } = require('../controllers/vendor.controller');
 
 // ── Specific routes first (before /:id) ────────────────────────
@@ -59,5 +60,12 @@ router.put('/:id/approve', authMiddleware, ownerOnly, approveVendor);
  * Access: OWNER only
  */
 router.put('/:id/reject', authMiddleware, ownerOnly, rejectVendor);
+
+/**
+ * POST /api/vendors/:id/resend-credentials
+ * Resend/reset vendor login credentials
+ * Access: OWNER only
+ */
+router.post('/:id/resend-credentials', authMiddleware, ownerOnly, resendVendorCredentials);
 
 module.exports = router;
