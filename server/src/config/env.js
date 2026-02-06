@@ -12,4 +12,8 @@ module.exports = {
   JWT_SECRET: process.env.JWT_SECRET || 'supersecretkey',
   ML_SERVICE_URL: process.env.ML_SERVICE_URL || 'http://localhost:5001',
   NODE_ENV: process.env.NODE_ENV || 'development',
+
+  // Groq LLM – used for real-world health-context awareness layer
+  GROQ_API_KEY: process.env.GROQ_API_KEY || '',
+  GROQ_MODEL: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
 };

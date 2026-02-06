@@ -11,13 +11,19 @@ const express = require('express');
 const router = express.Router();
 const { authMiddleware } = require('../middleware/auth.middleware');
 const { ownerOrManager, ownerOnly } = require('../middleware/role.middleware');
-const { predictDemand, triggerRetrain, aiHealth } = require('../controllers/ai.controller');
+const { predictDemand, forecastDemand, triggerRetrain, aiHealth } = require('../controllers/ai.controller');
 
 /**
  * POST /api/ai/predict-demand
  * Get AI demand prediction (OWNER or MANAGER)
  */
 router.post('/predict-demand', authMiddleware, ownerOrManager, predictDemand);
+
+/**
+ * POST /api/ai/forecast-demand
+ * Seasonal & location-aware forecast using SalesHistory (OWNER or MANAGER)
+ */
+router.post('/forecast-demand', authMiddleware, ownerOrManager, forecastDemand);
 
 /**
  * POST /api/ai/retrain

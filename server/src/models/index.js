@@ -13,6 +13,7 @@ const Alert = require('./Alert.model');
 const AiSuggestion = require('./AiSuggestion.model');
 const VendorProduct = require('./VendorProduct.model');
 const AuditLog = require('./AuditLog.model');
+const SalesHistory = require('./SalesHistory.model');
 
 module.exports = {
   User,
@@ -24,4 +25,5 @@ module.exports = {
   AiSuggestion,
   VendorProduct,
   AuditLog,
+  SalesHistory,
 };

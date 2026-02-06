@@ -20,9 +20,9 @@ MIN_HISTORY_LEN = 14               # Minimum sales history length
 
 # ── XGBoost Hyper-parameters ────────────────────────────────────
 XGB_PARAMS = {
-    "n_estimators": 200,
-    "max_depth": 5,
-    "learning_rate": 0.08,
+    "n_estimators": 300,
+    "max_depth": 6,
+    "learning_rate": 0.06,
     "subsample": 0.8,
     "colsample_bytree": 0.8,
     "random_state": 42,
@@ -32,6 +32,12 @@ XGB_PARAMS = {
 # ── Synthetic Data ──────────────────────────────────────────────
 SYNTHETIC_SAMPLES = 2000           # Rows for training data generation
 SYNTHETIC_HISTORY_LEN = 60         # Days per sample
+
+# ── Historical data (seeded from server) ────────────────────────
+SALES_HISTORY_JSON = os.getenv(
+    "SALES_HISTORY_JSON",
+    os.path.join(os.path.dirname(__file__), "..", "server", "scripts", "sales_history_export.json"),
+)
 
 # ── Safety Factor (buffer for reorder qty) ──────────────────────
 SAFETY_FACTOR = 1.25               # 25 % buffer over lead-time demand

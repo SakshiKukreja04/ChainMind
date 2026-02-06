@@ -24,6 +24,7 @@ import {
   Brain,
   AlertTriangle,
   Truck,
+  Sparkles,
 } from 'lucide-react';
 import { vendorApi, orderApi, type VendorResponse, type OrderResponse } from '@/lib/api';
 import { useSocket } from '@/hooks/useSocket';
@@ -114,6 +115,34 @@ export default function Approvals() {
     return () => { unsub1(); unsub2(); unsub3(); };
   }, [on, fetchOrders]);
 
+  useEffect(() => {
+    const unsub = on('order:status-change', () => { fetchOrders(); });
+    return unsub;
+  }, [on, fetchOrders]);
+
+  useEffect(() => {
+    const unsub = on('order:vendor-rejected', (data: any) => {
+      fetchOrders();
+      toast({
+        title: 'Order Rejected by Vendor',
+        description: `${data?.vendorName || 'Vendor'} rejected ${data?.productName || 'an order'}${data?.reason ? ` — "${data.reason}"` : ''}`,
+        variant: 'destructive',
+      });
+    });
+    return unsub;
+  }, [on, fetchOrders, toast]);
+
+  useEffect(() => {
+    const unsub = on('order:delay-requested', (data: any) => {
+      fetchOrders();
+      toast({
+        title: 'Vendor Requested Delay',
+        description: `${data?.vendorName || 'Vendor'} requested a delay for ${data?.productName || 'an order'}${data?.reason ? ` — "${data.reason}"` : ''}`,
+      });
+    });
+    return unsub;
+  }, [on, fetchOrders, toast]);
+
   // ── Vendor handlers ─────────────────────────────────────────
   const pendingVendors = vendors.filter((v) => v.status === 'PENDING');
   const approvedVendors = vendors.filter((v) => v.status === 'APPROVED');
@@ -152,10 +181,11 @@ export default function Approvals() {
   // ── Order handlers ──────────────────────────────────────────
   const pendingOrders = orders.filter((o) => o.status === 'PENDING_APPROVAL');
   const approvedOrders = orders.filter((o) => o.status === 'APPROVED');
-  const rejectedOrders = orders.filter((o) => o.status === 'REJECTED');
+  const rejectedOrders = orders.filter((o) => o.status === 'REJECTED' || o.status === 'VENDOR_REJECTED');
   const dispatchedOrders = orders.filter((o) => o.status === 'DISPATCHED');
   const confirmedOrders = orders.filter((o) => o.status === 'CONFIRMED');
   const deliveredOrders = orders.filter((o) => o.status === 'DELIVERED');
+  const delayRequestedOrders = orders.filter((o) => o.status === 'DELAY_REQUESTED');
 
   const handleMarkReceived = async (id: string) => {
     setReceivingId(id);
@@ -274,7 +304,7 @@ export default function Approvals() {
           </TabsTrigger>
           <TabsTrigger value="tracking" className="gap-2">
             <Truck className="h-4 w-4" />
-            Order Tracking ({dispatchedOrders.length + confirmedOrders.length})
+            Order Tracking ({dispatchedOrders.length + confirmedOrders.length + delayRequestedOrders.length})
           </TabsTrigger>
           <TabsTrigger value="vendors" className="gap-2">
             <Package className="h-4 w-4" />
@@ -353,12 +383,28 @@ export default function Approvals() {
                           <XCircle className="h-5 w-5 text-destructive" />
                         </div>
                         <div className="flex-1">
-                          <h4 className="font-semibold text-foreground">{order.productName}</h4>
+                          <div className="flex items-center gap-2">
+                            <h4 className="font-semibold text-foreground">{order.productName}</h4>
+                            {order.status === 'VENDOR_REJECTED' && (
+                              <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-800 font-medium">
+                                Vendor Rejected
+                              </span>
+                            )}
+                          </div>
                           <p className="text-sm text-muted-foreground">{order.quantity} units</p>
-                          {order.rejectionReason && (
-                            <p className="text-sm text-muted-foreground mt-1">Reason: {order.rejectionReason}</p>
+                          {order.vendorName && order.status === 'VENDOR_REJECTED' && (
+                            <p className="text-sm text-muted-foreground">Vendor: {order.vendorName}</p>
                           )}
-                          <p className="text-sm text-destructive font-medium mt-2">Rejected</p>
+                          {order.rejectionReason && (
+                            <div className="mt-2 p-2 bg-destructive/5 rounded-md border border-destructive/20">
+                              <p className="text-sm text-destructive">
+                                <span className="font-medium">Reason:</span> {order.rejectionReason}
+                              </p>
+                            </div>
+                          )}
+                          <p className="text-sm text-destructive font-medium mt-2">
+                            {order.status === 'VENDOR_REJECTED' ? 'Rejected by Vendor' : 'Rejected'}
+                          </p>
                         </div>
                       </div>
                     </div>
@@ -375,8 +421,13 @@ export default function Approvals() {
 
         {/* ── Order Tracking ───────────────────────────────────── */}
         <TabsContent value="tracking">
-          <Tabs defaultValue="dispatched" className="w-full">
+          <Tabs defaultValue={delayRequestedOrders.length > 0 ? 'delay' : 'dispatched'} className="w-full">
             <TabsList className="mb-4">
+              {delayRequestedOrders.length > 0 && (
+                <TabsTrigger value="delay" className="gap-2">
+                  <AlertTriangle className="h-4 w-4" /> Delay Requested ({delayRequestedOrders.length})
+                </TabsTrigger>
+              )}
               <TabsTrigger value="dispatched" className="gap-2">
                 <Truck className="h-4 w-4" /> Dispatched ({dispatchedOrders.length})
               </TabsTrigger>
@@ -387,6 +438,43 @@ export default function Approvals() {
                 <Package className="h-4 w-4" /> Delivered ({deliveredOrders.length})
               </TabsTrigger>
             </TabsList>
+
+            <TabsContent value="delay">
+              {delayRequestedOrders.length > 0 ? (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  {delayRequestedOrders.map((order) => (
+                    <div key={order.id} className="card-dashboard border-l-4 border-l-orange-400">
+                      <div className="flex items-start gap-4">
+                        <div className="p-3 rounded-xl bg-orange-500/10">
+                          <AlertTriangle className="h-5 w-5 text-orange-600" />
+                        </div>
+                        <div className="flex-1">
+                          <h4 className="font-semibold text-foreground">{order.productName}</h4>
+                          <p className="text-sm text-muted-foreground">{order.quantity} units — {order.vendorName}</p>
+                          {order.delayReason && (
+                            <div className="mt-2 p-2 bg-orange-50 rounded-md border border-orange-200">
+                              <p className="text-sm text-orange-800">
+                                <span className="font-medium">Delay reason:</span> {order.delayReason}
+                              </p>
+                            </div>
+                          )}
+                          {order.newExpectedDate && (
+                            <p className="text-sm text-muted-foreground mt-1">
+                              New proposed date: {new Date(order.newExpectedDate).toLocaleDateString()}
+                            </p>
+                          )}
+                          <p className="text-sm text-orange-600 font-medium mt-2">Vendor Requested Delay</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="card-dashboard text-center py-12">
+                  <p className="text-muted-foreground">No delay requests.</p>
+                </div>
+              )}
+            </TabsContent>
 
             <TabsContent value="dispatched">
               {dispatchedOrders.length > 0 ? (
@@ -688,6 +776,11 @@ function OrderApprovalCard({
               <div className="flex items-center gap-2 text-sm mb-2">
                 <Brain className="h-4 w-4 text-primary" />
                 <span className="font-medium text-primary">AI Recommendation</span>
+                {ai.llmContext?.contextBoostApplied && (
+                  <span className="flex items-center gap-1 text-xs text-primary bg-primary/10 px-1.5 py-0.5 rounded-full">
+                    <Sparkles className="h-3 w-3" /> Context Boost
+                  </span>
+                )}
               </div>
               <div className="grid grid-cols-2 gap-1 text-xs">
                 <span>Forecasted: <strong>{ai.forecastedDemand}/day</strong></span>
@@ -698,6 +791,18 @@ function OrderApprovalCard({
                 <div className="flex items-center gap-1 text-xs text-warning mt-2">
                   <AlertTriangle className="h-3 w-3" />
                   Low confidence — review carefully
+                </div>
+              )}
+              {ai.llmContext?.contextBoostApplied && (
+                <div className="flex items-start gap-2 bg-primary/10 border border-primary/20 rounded-lg p-2 mt-2">
+                  <Sparkles className="h-3.5 w-3.5 text-primary shrink-0 mt-0.5" />
+                  <div className="text-xs">
+                    <span className="font-semibold text-primary">Demand increased due to:</span>{' '}
+                    <span className="text-foreground">{ai.llmContext.reason}</span>
+                    <span className="text-muted-foreground ml-1">
+                      (+{((ai.llmContext.boostMultiplier) * 100).toFixed(0)}% boost)
+                    </span>
+                  </div>
                 </div>
               )}
             </div>

@@ -49,6 +49,7 @@ export default function AISuggestions() {
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState<string | null>(null);
   const [reorderDialog, setReorderDialog] = useState<AiSuggestionResponse | null>(null);
+  const [detailDialog, setDetailDialog] = useState<AiSuggestionResponse | null>(null);
   const [reorderQty, setReorderQty] = useState(0);
   const [selectedVendorId, setSelectedVendorId] = useState('');
   const [approvedVendors, setApprovedVendors] = useState<VendorResponse[]>([]);
@@ -226,6 +227,7 @@ export default function AISuggestions() {
                   isGenerating={generating === product.id}
                   onGenerate={() => handleGenerate(product.id)}
                   onReorder={existing ? () => openReorder(existing) : undefined}
+                  onViewDetail={existing ? () => setDetailDialog(existing) : submitted ? () => setDetailDialog(submitted) : undefined}
                 />
               );
             })}
@@ -258,6 +260,114 @@ export default function AISuggestions() {
           </div>
         </div>
       )}
+
+      {/* Forecast Explainability Dialog */}
+      <Dialog open={!!detailDialog} onOpenChange={() => setDetailDialog(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Brain className="h-5 w-5 text-primary" />
+              Demand Forecast — {detailDialog?.productName}
+            </DialogTitle>
+          </DialogHeader>
+          {detailDialog && (
+            <div className="space-y-4 py-2">
+              {/* Core Metrics */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-muted/50 rounded-lg p-3 text-center">
+                  <p className="text-2xl font-bold text-foreground">{detailDialog.predictedDailyDemand}</p>
+                  <p className="text-xs text-muted-foreground">units/day predicted</p>
+                </div>
+                <div className="bg-muted/50 rounded-lg p-3 text-center">
+                  <p className="text-2xl font-bold text-destructive">{detailDialog.daysToStockout}d</p>
+                  <p className="text-xs text-muted-foreground">until stockout</p>
+                </div>
+                <div className="bg-muted/50 rounded-lg p-3 text-center">
+                  <p className="text-2xl font-bold text-primary">{detailDialog.suggestedReorderQty}</p>
+                  <p className="text-xs text-muted-foreground">suggested reorder qty</p>
+                </div>
+                <div className="bg-muted/50 rounded-lg p-3 text-center">
+                  <p className="text-2xl font-bold text-foreground">{(detailDialog.confidence * 100).toFixed(0)}%</p>
+                  <p className="text-xs text-muted-foreground">ML confidence</p>
+                </div>
+              </div>
+
+              {/* Stock Info */}
+              <div className="bg-muted/30 rounded-lg p-3">
+                <h4 className="text-sm font-medium text-foreground mb-2">Stock Overview</h4>
+                <div className="grid grid-cols-3 gap-2 text-xs">
+                  <div>
+                    <span className="text-muted-foreground">Current Stock</span>
+                    <p className="font-semibold text-foreground">{detailDialog.currentStock} units</p>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Revenue at Risk</span>
+                    <p className="font-semibold text-foreground">
+                      ${(detailDialog.predictedDailyDemand * detailDialog.daysToStockout * (detailDialog.sellingPrice || 0)).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Method</span>
+                    <p className="font-semibold text-foreground">{detailDialog.method || 'XGBoost'}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* LLM Context Explainability */}
+              <div className={`rounded-lg p-3 border ${
+                detailDialog.llmContext?.contextBoostApplied
+                  ? 'bg-primary/5 border-primary/20'
+                  : 'bg-muted/30 border-border'
+              }`}>
+                <div className="flex items-center gap-2 mb-2">
+                  <Sparkles className={`h-4 w-4 ${
+                    detailDialog.llmContext?.contextBoostApplied ? 'text-primary' : 'text-muted-foreground'
+                  }`} />
+                  <h4 className="text-sm font-medium text-foreground">Real-World Context Analysis</h4>
+                  {detailDialog.llmContext?.contextBoostApplied && (
+                    <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-full font-semibold">
+                      ACTIVE BOOST
+                    </span>
+                  )}
+                </div>
+                {detailDialog.llmContext ? (
+                  <div className="space-y-2">
+                    <p className="text-sm text-foreground">{detailDialog.llmContext.reason}</p>
+                    <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                      <span>Signal: <strong className={detailDialog.llmContext.signal === 'YES' ? 'text-primary' : 'text-foreground'}>{detailDialog.llmContext.signal}</strong></span>
+                      <span>LLM Confidence: <strong>{(detailDialog.llmContext.confidence * 100).toFixed(0)}%</strong></span>
+                      {detailDialog.llmContext.contextBoostApplied && (
+                        <span>Demand Boost: <strong className="text-primary">+{((detailDialog.llmContext.boostMultiplier) * 100).toFixed(0)}%</strong></span>
+                      )}
+                    </div>
+                    {detailDialog.llmContext.contextBoostApplied && (
+                      <p className="text-xs text-primary/80 italic">
+                        Demand figures above include the context boost. The base ML prediction was adjusted upward due to detected real-world conditions.
+                      </p>
+                    )}
+                    {!detailDialog.llmContext.contextBoostApplied && detailDialog.llmContext.signal === 'NO' && (
+                      <p className="text-xs text-muted-foreground italic">
+                        No significant real-world events detected that would alter base demand. Prediction is based purely on ML analysis of historical sales data.
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">Context analysis not available for this prediction.</p>
+                )}
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDetailDialog(null)}>Close</Button>
+            {detailDialog?.status === 'ACTIVE' && (
+              <Button onClick={() => { setDetailDialog(null); if (detailDialog) openReorder(detailDialog); }}>
+                <ShoppingCart className="h-4 w-4" />
+                <span className="ml-1">Reorder</span>
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Reorder Dialog */}
       <Dialog open={!!reorderDialog} onOpenChange={() => setReorderDialog(null)}>
@@ -296,6 +406,20 @@ export default function AISuggestions() {
                   <p className="text-muted-foreground">
                     Low confidence prediction. Consider reviewing sales data before ordering.
                   </p>
+                </div>
+              )}
+
+              {reorderDialog.llmContext?.contextBoostApplied && (
+                <div className="flex items-start gap-2 bg-primary/10 border border-primary/20 rounded-lg p-3 text-sm">
+                  <Sparkles className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-semibold text-primary text-xs">Health Context Detected</p>
+                    <p className="text-foreground text-xs mt-0.5">{reorderDialog.llmContext.reason}</p>
+                    <p className="text-muted-foreground text-xs mt-0.5">
+                      Demand boosted by +{((reorderDialog.llmContext.boostMultiplier) * 100).toFixed(0)}%
+                      (LLM confidence: {(reorderDialog.llmContext.confidence * 100).toFixed(0)}%)
+                    </p>
+                  </div>
                 </div>
               )}
 
@@ -376,12 +500,14 @@ function ProductAiCard({
   isGenerating,
   onGenerate,
   onReorder,
+  onViewDetail,
 }: {
   product: ProductResponse;
   suggestion: AiSuggestionResponse | null;
   isGenerating: boolean;
   onGenerate: () => void;
   onReorder?: () => void;
+  onViewDetail?: () => void;
 }) {
   const isLowStock = product.status === 'low-stock' || product.status === 'out-of-stock';
 
@@ -421,13 +547,27 @@ function ProductAiCard({
                 <span>Reorder: <strong>{suggestion.suggestedReorderQty} units</strong></span>
                 <span>Confidence: <strong>{(suggestion.confidence * 100).toFixed(0)}%</strong></span>
               </div>
-              {onReorder && suggestion.status === 'ACTIVE' && (
-                <Button size="sm" className="w-full mt-2" onClick={onReorder}>
-                  <ShoppingCart className="h-3.5 w-3.5" />
-                  <span className="ml-1">Reorder</span>
-                  <ArrowRight className="h-3.5 w-3.5 ml-1" />
-                </Button>
+              {suggestion.llmContext?.contextBoostApplied && (
+                <div className="flex items-start gap-1.5 mt-2 text-xs text-primary">
+                  <Sparkles className="h-3 w-3 shrink-0 mt-0.5" />
+                  <span className="line-clamp-2">{suggestion.llmContext.reason}</span>
+                </div>
               )}
+              <div className="flex gap-2 mt-2">
+                {onViewDetail && (
+                  <Button size="sm" variant="outline" className="flex-1" onClick={onViewDetail}>
+                    <Info className="h-3.5 w-3.5" />
+                    <span className="ml-1">View Details</span>
+                  </Button>
+                )}
+                {onReorder && suggestion.status === 'ACTIVE' && (
+                  <Button size="sm" className="flex-1" onClick={onReorder}>
+                    <ShoppingCart className="h-3.5 w-3.5" />
+                    <span className="ml-1">Reorder</span>
+                    <ArrowRight className="h-3.5 w-3.5 ml-1" />
+                  </Button>
+                )}
+              </div>
               {suggestion.status === 'SUBMITTED' && (
                 <div className="flex items-center gap-2 text-xs text-success mt-2">
                   <CheckCircle className="h-3.5 w-3.5" />
@@ -524,6 +664,20 @@ function SuggestionCard({
             <div className="flex items-center gap-1 text-xs text-warning mb-2">
               <Info className="h-3 w-3" />
               Low confidence — review before ordering
+            </div>
+          )}
+
+          {/* LLM Health-Context Banner */}
+          {suggestion.llmContext?.contextBoostApplied && (
+            <div className="flex items-start gap-2 bg-primary/10 border border-primary/20 rounded-lg p-2.5 mb-2">
+              <Sparkles className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+              <div className="text-xs">
+                <span className="font-semibold text-primary">Demand increased due to:</span>{' '}
+                <span className="text-foreground">{suggestion.llmContext.reason}</span>
+                <span className="text-muted-foreground ml-1">
+                  (+{((suggestion.llmContext.boostMultiplier) * 100).toFixed(0)}% boost, {(suggestion.llmContext.confidence * 100).toFixed(0)}% LLM confidence)
+                </span>
+              </div>
             </div>
           )}
 

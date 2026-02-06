@@ -405,6 +405,14 @@ export const vendorApi = {
 
 // ── AI Demand Forecasting API ───────────────────────────────────
 
+export interface LLMContext {
+  signal: 'YES' | 'NO';
+  confidence: number;
+  reason: string;
+  contextBoostApplied: boolean;
+  boostMultiplier: number;
+}
+
 export interface DemandPrediction {
   predictedDailyDemand: number;
   daysToStockout: number;
@@ -413,6 +421,7 @@ export interface DemandPrediction {
   method: string;
   productId?: string;
   inferenceTimeMs?: number;
+  llmContext?: LLMContext;
 }
 
 export interface PredictDemandPayload {
@@ -490,6 +499,7 @@ export interface AiSuggestionResponse {
   confidence: number;
   method: string;
   inferenceTimeMs?: number;
+  llmContext?: LLMContext;
   status: 'ACTIVE' | 'SUBMITTED' | 'EXPIRED';
   orderId?: string;
   createdBy?: { name: string; email: string };
@@ -552,6 +562,7 @@ export interface OrderResponse {
     recommendedQuantity: number;
     confidence: number;
     reasoning: string;
+    llmContext?: LLMContext;
   };
   expectedDeliveryDate?: string;
   actualDeliveryDate?: string;

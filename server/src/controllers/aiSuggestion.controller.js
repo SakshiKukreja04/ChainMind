@@ -8,8 +8,9 @@
  *   GET  /api/inventory/ai-suggestions/:id        – Get single suggestion
  */
 
-const { Product, AiSuggestion } = require('../models');
+const { Product, AiSuggestion, Business } = require('../models');
 const aiService = require('../services/aiService');
+const { detectHealthContext, applyContextBoost } = require('../services/llmContextService');
 const { getSocket } = require('../sockets');
 
 // ── POST /api/inventory/:productId/ai-suggestion ────────────────
@@ -79,6 +80,16 @@ const generateSuggestion = async (req, res) => {
       });
     }
 
+    // 4b. LLM health-context awareness (failure-safe)
+    const business = await Business.findById(req.user.businessId).select('location industry').lean();
+    const llmContext = await detectHealthContext({
+      productName: product.name || product.sku,
+      city: business?.location || 'unknown',
+      industry: business?.industry || 'general',
+      category: product.category || '',
+    });
+    prediction = applyContextBoost(prediction, llmContext);
+
     // 5. Persist suggestion in MongoDB
     const suggestion = await AiSuggestion.create({
       productId: product._id,
@@ -88,6 +99,7 @@ const generateSuggestion = async (req, res) => {
       confidence: prediction.confidence,
       method: prediction.method,
       inferenceTimeMs: prediction.inferenceTimeMs || null,
+      llmContext: prediction.llmContext || null,
       status: 'ACTIVE',
       createdBy: req.user.userId,
       businessId: req.user.businessId,
@@ -133,6 +145,7 @@ const generateSuggestion = async (req, res) => {
         confidence: suggestion.confidence,
         method: suggestion.method,
         inferenceTimeMs: suggestion.inferenceTimeMs,
+        llmContext: suggestion.llmContext || null,
         status: suggestion.status,
         snapshot: suggestion.snapshot,
         createdAt: suggestion.createdAt,
@@ -174,6 +187,7 @@ const listSuggestions = async (req, res) => {
         confidence: s.confidence,
         method: s.method,
         inferenceTimeMs: s.inferenceTimeMs,
+        llmContext: s.llmContext || null,
         status: s.status,
         orderId: s.orderId,
         createdBy: s.createdBy,

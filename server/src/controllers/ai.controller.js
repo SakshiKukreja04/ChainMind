@@ -4,13 +4,16 @@
  *
  * Endpoints:
  *   POST /api/ai/predict-demand   – get forecast for a single product
+ *   POST /api/ai/forecast-demand  – seasonal/location-aware forecast (uses SalesHistory)
  *   POST /api/ai/retrain          – trigger model retrain
  *   GET  /api/ai/health           – check AI service health
  */
 
-const { Product, Vendor } = require('../models');
+const { Product, Vendor, Business } = require('../models');
 const env = require('../config/env');
 const axios = require('axios');
+const { forecastDemand: forecastFromService } = require('../services/aiService');
+const { detectHealthContext, applyContextBoost } = require('../services/llmContextService');
 
 const AI_BASE = env.ML_SERVICE_URL || 'http://localhost:5001';
 
@@ -94,7 +97,16 @@ const predictDemand = async (req, res) => {
       leadTimeDays: leadTime,
     });
 
-    // Optionally persist the AI recommendation on the order model later
+    // ── LLM health-context awareness (failure-safe) ──────────
+    const business = await Business.findById(req.user.businessId).select('location industry').lean();
+    const llmContext = await detectHealthContext({
+      productName: product.name || productId,
+      city: business?.location || 'unknown',
+      industry: business?.industry || 'general',
+      category: product.category || '',
+    });
+    const enrichedPrediction = applyContextBoost(prediction, llmContext);
+
     return res.json({
       success: true,
       product: {
@@ -103,7 +115,7 @@ const predictDemand = async (req, res) => {
         sku: product.sku,
         currentStock: product.currentStock,
       },
-      prediction,
+      prediction: enrichedPrediction,
     });
   } catch (err) {
     console.error('AI predictDemand error:', err.response?.data || err.message || err);
@@ -146,4 +158,33 @@ const aiHealth = async (req, res) => {
   }
 };
 
-module.exports = { predictDemand, triggerRetrain, aiHealth };
+// ── POST /api/ai/forecast-demand ─────────────────────────────────
+const forecastDemand = async (req, res) => {
+  try {
+    const { productId, city, historyDays } = req.body;
+
+    if (!productId) {
+      return res.status(400).json({
+        success: false,
+        message: 'productId is required',
+      });
+    }
+
+    const prediction = await forecastFromService({
+      productId,
+      businessId: req.user.businessId,
+      city: city || null,
+      historyDays: historyDays || 30,
+    });
+
+    return res.json({ success: true, prediction });
+  } catch (err) {
+    console.error('AI forecastDemand error:', err.message);
+    const status = err.status || err.response?.status || 500;
+    const message =
+      err.response?.data?.error || err.message || 'Failed to get seasonal forecast';
+    return res.status(status).json({ success: false, message });
+  }
+};
+
+module.exports = { predictDemand, forecastDemand, triggerRetrain, aiHealth };

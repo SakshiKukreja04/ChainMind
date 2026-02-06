@@ -138,7 +138,11 @@ const submitAiReorder = async (req, res) => {
         confidence: suggestion.confidence,
         reasoning: `AI predicted ${suggestion.predictedDailyDemand} units/day demand. ` +
                    `Stock-out in ${suggestion.daysToStockout} days. ` +
-                   `Method: ${suggestion.method}, Confidence: ${(suggestion.confidence * 100).toFixed(0)}%`,
+                   `Method: ${suggestion.method}, Confidence: ${(suggestion.confidence * 100).toFixed(0)}%` +
+                   (suggestion.llmContext?.contextBoostApplied
+                     ? `. Context boost: ${suggestion.llmContext.reason}`
+                     : ''),
+        llmContext: suggestion.llmContext || null,
       },
     });
 
@@ -233,6 +237,9 @@ const listOrders = async (req, res) => {
         confirmedAt: o.confirmedAt,
         dispatchedAt: o.dispatchedAt,
         rejectionReason: o.rejectionReason,
+        delayReason: o.delayReason || null,
+        newExpectedDate: o.newExpectedDate || null,
+        vendorAction: o.vendorAction || null,
         notes: o.notes,
         createdBy: o.createdBy,
         approvedBy: o.approvedBy,
@@ -445,6 +452,10 @@ const getVendorOrders = async (req, res) => {
         actualDeliveryDate: o.actualDeliveryDate,
         confirmedAt: o.confirmedAt,
         dispatchedAt: o.dispatchedAt,
+        rejectionReason: o.rejectionReason,
+        delayReason: o.delayReason || null,
+        newExpectedDate: o.newExpectedDate || null,
+        vendorAction: o.vendorAction || null,
         createdBy: o.createdBy,
         approvedBy: o.approvedBy,
         createdAt: o.createdAt,
@@ -753,6 +764,12 @@ const vendorOrderAction = async (req, res) => {
     try {
       const io = getSocket();
       io.emit('order:status-change', eventPayload);
+      // Dedicated event so owner/manager pages can show a targeted toast
+      if (action === 'REJECT') {
+        io.emit('order:vendor-rejected', eventPayload);
+      } else if (action === 'REQUEST_DELAY') {
+        io.emit('order:delay-requested', eventPayload);
+      }
     } catch (socketErr) {
       console.warn('Socket emit failed:', socketErr.message);
     }

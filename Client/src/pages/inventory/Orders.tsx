@@ -11,6 +11,7 @@ import {
   XCircle,
   Truck,
   Brain,
+  Sparkles,
 } from 'lucide-react';
 import { orderApi, type OrderResponse } from '@/lib/api';
 import { useSocket } from '@/hooks/useSocket';
@@ -23,6 +24,8 @@ const STATUS_CONFIG: Record<string, { label: string; class: string }> = {
   CONFIRMED: { label: 'Confirmed', class: 'bg-amber-100 text-amber-800' },
   DISPATCHED: { label: 'Dispatched', class: 'bg-purple-100 text-purple-800' },
   REJECTED: { label: 'Rejected', class: 'bg-destructive/10 text-destructive' },
+  VENDOR_REJECTED: { label: 'Vendor Rejected', class: 'bg-red-100 text-red-800' },
+  DELAY_REQUESTED: { label: 'Delay Requested', class: 'bg-orange-100 text-orange-800' },
   DELIVERED: { label: 'Delivered', class: 'bg-primary/10 text-primary' },
 };
 
@@ -71,6 +74,26 @@ export default function Orders() {
     const unsub3 = on('order:delivered', () => { fetchOrders(); });
     return () => { unsub1(); unsub2(); unsub3(); };
   }, [on, fetchOrders]);
+
+  useEffect(() => {
+    const unsub1 = on('order:status-change', () => { fetchOrders(); });
+    const unsub2 = on('order:vendor-rejected', (data: any) => {
+      fetchOrders();
+      toast({
+        title: 'Order Rejected by Vendor',
+        description: `${data?.productName || 'An order'} was rejected${data?.reason ? `: ${data.reason}` : ''}`,
+        variant: 'destructive',
+      });
+    });
+    const unsub3 = on('order:delay-requested', (data: any) => {
+      fetchOrders();
+      toast({
+        title: 'Delay Requested',
+        description: `${data?.productName || 'An order'} — vendor requested delay${data?.reason ? `: ${data.reason}` : ''}`,
+      });
+    });
+    return () => { unsub1(); unsub2(); unsub3(); };
+  }, [on, fetchOrders, toast]);
 
   const filteredOrders = orders.filter(
     (o) =>
@@ -171,9 +194,19 @@ export default function Orders() {
                       </td>
                       <td className="py-3 px-4">
                         {order.aiRecommendation ? (
-                          <div className="flex items-center gap-1 text-xs text-primary">
-                            <Brain className="h-3.5 w-3.5" />
-                            {(order.aiRecommendation.confidence * 100).toFixed(0)}%
+                          <div>
+                            <div className="flex items-center gap-1 text-xs text-primary">
+                              <Brain className="h-3.5 w-3.5" />
+                              {(order.aiRecommendation.confidence * 100).toFixed(0)}%
+                              {order.aiRecommendation.llmContext?.contextBoostApplied && (
+                                <Sparkles className="h-3 w-3 text-primary" title="Health context boost applied" />
+                              )}
+                            </div>
+                            {order.aiRecommendation.llmContext?.contextBoostApplied && (
+                              <p className="text-[10px] text-primary/70 mt-0.5 max-w-[180px] truncate" title={order.aiRecommendation.llmContext.reason}>
+                                {order.aiRecommendation.llmContext.reason}
+                              </p>
+                            )}
                           </div>
                         ) : (
                           <span className="text-xs text-muted-foreground">—</span>
@@ -183,6 +216,16 @@ export default function Orders() {
                         <span className={`text-xs px-2 py-1 rounded-full font-medium ${cfg.class}`}>
                           {cfg.label}
                         </span>
+                        {(order.status === 'VENDOR_REJECTED' || order.status === 'REJECTED') && order.rejectionReason && (
+                          <p className="text-xs text-destructive/80 mt-1 max-w-[200px] truncate" title={order.rejectionReason}>
+                            Reason: {order.rejectionReason}
+                          </p>
+                        )}
+                        {order.status === 'DELAY_REQUESTED' && order.delayReason && (
+                          <p className="text-xs text-orange-600 mt-1 max-w-[200px] truncate" title={order.delayReason}>
+                            Reason: {order.delayReason}
+                          </p>
+                        )}
                       </td>
                       <td className="py-3 px-4 text-xs text-muted-foreground">
                         {new Date(order.createdAt).toLocaleDateString()}

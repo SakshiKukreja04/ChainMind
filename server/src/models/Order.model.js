@@ -222,6 +222,13 @@ const orderSchema = new mongoose.Schema(
       recommendedQuantity: Number,
       confidence: Number, // 0-1
       reasoning: String,
+      llmContext: {
+        signal: { type: String, enum: ['YES', 'NO'], default: 'NO' },
+        confidence: { type: Number, min: 0, max: 1, default: 0 },
+        reason: { type: String, default: '' },
+        contextBoostApplied: { type: Boolean, default: false },
+        boostMultiplier: { type: Number, default: 0 },
+      },
     },
   },
   {

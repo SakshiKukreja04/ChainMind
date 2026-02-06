@@ -96,6 +96,15 @@ const aiSuggestionSchema = new mongoose.Schema(
       sellingPrice: Number,
       leadTimeDays: Number,
     },
+
+    /** LLM health-context awareness metadata (optional, failure-safe) */
+    llmContext: {
+      signal: { type: String, enum: ['YES', 'NO'], default: 'NO' },
+      confidence: { type: Number, min: 0, max: 1, default: 0 },
+      reason: { type: String, default: '' },
+      contextBoostApplied: { type: Boolean, default: false },
+      boostMultiplier: { type: Number, default: 0 },
+    },
   },
   {
     timestamps: true,

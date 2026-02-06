@@ -4,7 +4,7 @@ Predictor service — loads the trained model and produces forecasts.
 Public API
 ──────────
   predict(payload: dict) → dict
-      Accepts:  { productId, salesHistory, currentStock, leadTimeDays }
+      Accepts:  { productId, salesHistory, currentStock, leadTimeDays, city? }
       Returns:  { predictedDailyDemand, daysToStockout, suggestedReorderQty,
                   confidence }
 
@@ -16,6 +16,7 @@ before the first training run.
 import os
 import logging
 import math
+import datetime
 import numpy as np
 import joblib
 
@@ -62,7 +63,7 @@ def predict(payload: dict) -> dict:
     ----------
     payload : dict
         Required keys: salesHistory, currentStock, leadTimeDays
-        Optional: productId (passed through)
+        Optional: productId, city
 
     Returns
     -------
@@ -73,6 +74,7 @@ def predict(payload: dict) -> dict:
     current_stock = float(payload.get("currentStock", 0))
     lead_time = float(payload.get("leadTimeDays", 7))
     product_id = payload.get("productId", None)
+    city = payload.get("city", None)
 
     # ── Validate inputs ──────────────────────────────────────────
     if not sales_history or not isinstance(sales_history, list):
@@ -85,17 +87,25 @@ def predict(payload: dict) -> dict:
     # ── Predict daily demand ─────────────────────────────────────
     artifact = _load_model()
     method = "xgboost"
+    today = datetime.date.today().isoformat()
 
     if artifact is not None:
         model = artifact["model"]
         feature_names = artifact["feature_names"]
 
-        feats = extract_features(sales_history, current_stock, lead_time)
-        X = np.array([[feats[k] for k in feature_names]])
+        feats = extract_features(
+            sales_history,
+            current_stock,
+            lead_time,
+            city=city,
+            ref_date=today,
+        )
+
+        # Ensure we only pass features the model expects
+        X = np.array([[feats.get(k, 0.0) for k in feature_names]])
         predicted_demand = float(model.predict(X)[0])
 
         # Confidence: use relative std of residuals on training data as proxy
-        # (bounded 0-1; higher is better)
         rolling_std = feats.get("rolling_std_7", 1.0)
         rolling_mean = feats.get("rolling_mean_7", 1.0)
         cv = rolling_std / rolling_mean if rolling_mean > 0 else 1.0
@@ -130,10 +140,13 @@ def predict(payload: dict) -> dict:
 
     if product_id:
         result["productId"] = product_id
+    if city:
+        result["city"] = city
 
     logger.info(
-        "Prediction [%s] → demand=%.2f  stockout=%dd  reorder=%d  (method=%s, conf=%.2f)",
-        product_id or "?", predicted_demand, days_to_stockout, suggested_qty,
+        "Prediction [%s/%s] → demand=%.2f  stockout=%dd  reorder=%d  (method=%s, conf=%.2f)",
+        product_id or "?", city or "?",
+        predicted_demand, days_to_stockout, suggested_qty,
         method, confidence,
     )
 

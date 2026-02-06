@@ -30,6 +30,7 @@ import {
   Loader2,
   RefreshCw,
   CheckCircle,
+  Sparkles,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
@@ -255,10 +256,20 @@ export default function SMEDashboard() {
                 return (
                   <div key={s.id} className="flex items-center justify-between p-3 rounded-lg border">
                     <div className="flex-1 min-w-0">
-                      <p className="font-medium text-sm truncate">{s.productName}</p>
+                      <div className="flex items-center gap-1.5">
+                        <p className="font-medium text-sm truncate">{s.productName}</p>
+                        {s.llmContext?.contextBoostApplied && (
+                          <Sparkles className="h-3.5 w-3.5 text-primary shrink-0" title="LLM context boost applied" />
+                        )}
+                      </div>
                       <p className="text-xs text-muted-foreground">
                         Demand: {s.predictedDailyDemand}/day • Reorder: {s.suggestedReorderQty} units
                       </p>
+                      {s.llmContext?.contextBoostApplied && (
+                        <p className="text-xs text-primary mt-0.5 truncate" title={s.llmContext.reason}>
+                          ⚡ {s.llmContext.reason}
+                        </p>
+                      )}
                     </div>
                     <Badge className={
                       conf >= 80 ? 'bg-green-100 text-green-800' :

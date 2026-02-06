@@ -20,6 +20,7 @@ import {
   RefreshCw,
   Truck,
   CheckCircle,
+  Sparkles,
 } from 'lucide-react';
 
 export default function AIInsights() {
@@ -202,6 +203,7 @@ export default function AIInsights() {
                   <th className="text-left py-3 px-4 text-sm font-medium text-muted-foreground">Forecast Demand</th>
                   <th className="text-left py-3 px-4 text-sm font-medium text-muted-foreground">Recommended Qty</th>
                   <th className="text-left py-3 px-4 text-sm font-medium text-muted-foreground">Confidence</th>
+                  <th className="text-left py-3 px-4 text-sm font-medium text-muted-foreground">Context</th>
                   <th className="text-left py-3 px-4 text-sm font-medium text-muted-foreground">Status</th>
                 </tr>
               </thead>
@@ -226,6 +228,21 @@ export default function AIInsights() {
                         >
                           {conf}%
                         </Badge>
+                      </td>
+                      <td className="py-3 px-4">
+                        {s.llmContext?.contextBoostApplied ? (
+                          <div className="flex items-start gap-1.5 max-w-[220px]">
+                            <Sparkles className="h-3.5 w-3.5 text-primary shrink-0 mt-0.5" />
+                            <span className="text-xs text-primary leading-tight">
+                              {s.llmContext.reason}
+                              <span className="text-muted-foreground ml-1">
+                                (+{((s.llmContext.boostMultiplier) * 100).toFixed(0)}%)
+                              </span>
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
                       </td>
                       <td className="py-3 px-4">
                         {product ? (
