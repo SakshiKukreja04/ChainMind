@@ -11,12 +11,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Boxes, Eye, EyeOff, ArrowRight, ArrowLeft } from 'lucide-react';
+import { Boxes, Eye, EyeOff, ArrowRight, ArrowLeft, Loader2 } from 'lucide-react';
+import { authApi } from '@/lib/api';
+import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function SignUp() {
   const navigate = useNavigate();
+  const { toast } = useToast();
+  const { login } = useAuth();
   const [step, setStep] = useState(1);
   const [showPassword, setShowPassword] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const [formData, setFormData] = useState({
     // User Info
     name: '',
@@ -31,13 +37,72 @@ export default function SignUp() {
     aiAssistedReorder: true,
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
     if (step === 1) {
+      // Validate step 1 fields
+      if (!formData.name || !formData.email || !formData.password) {
+        toast({
+          title: 'Validation Error',
+          description: 'Please fill in all required fields',
+          variant: 'destructive',
+        });
+        return;
+      }
+      if (formData.password.length < 6) {
+        toast({
+          title: 'Validation Error',
+          description: 'Password must be at least 6 characters',
+          variant: 'destructive',
+        });
+        return;
+      }
       setStep(2);
     } else {
-      // Mock signup - navigate to dashboard
-      navigate('/sme/dashboard');
+      // Validate step 2 fields
+      if (!formData.businessName || !formData.industry || !formData.location) {
+        toast({
+          title: 'Validation Error',
+          description: 'Please fill in all business details',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      // Submit to API
+      setIsLoading(true);
+      try {
+        const response = await authApi.signup({
+          name: formData.name,
+          email: formData.email,
+          password: formData.password,
+          role: 'OWNER',
+          businessName: formData.businessName,
+          industry: formData.industry,
+          location: formData.location,
+          currency: formData.currency,
+        });
+
+        // Store in auth context (also persists to localStorage)
+        login(response.token, response.user as any);
+
+        toast({
+          title: 'Success!',
+          description: 'Your account has been created successfully',
+        });
+
+        // Redirect based on role
+        navigate('/sme/dashboard');
+      } catch (error) {
+        toast({
+          title: 'Registration Failed',
+          description: error instanceof Error ? error.message : 'Something went wrong',
+          variant: 'destructive',
+        });
+      } finally {
+        setIsLoading(false);
+      }
     }
   };
 
@@ -221,13 +286,23 @@ export default function SignUp() {
                     variant="outline" 
                     onClick={() => setStep(1)}
                     className="flex-1"
+                    disabled={isLoading}
                   >
                     <ArrowLeft className="h-4 w-4" />
                     Back
                   </Button>
-                  <Button type="submit" className="flex-1">
-                    Create Business
-                    <ArrowRight className="h-4 w-4" />
+                  <Button type="submit" className="flex-1" disabled={isLoading}>
+                    {isLoading ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Creating...
+                      </>
+                    ) : (
+                      <>
+                        Create Business
+                        <ArrowRight className="h-4 w-4" />
+                      </>
+                    )}
                   </Button>
                 </div>
               </>

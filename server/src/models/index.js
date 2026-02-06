@@ -9,6 +9,7 @@ const Business = require('./Business.model');
 const Product = require('./Product.model');
 const Vendor = require('./Vendor.model');
 const Order = require('./Order.model');
+const Alert = require('./Alert.model');
 
 module.exports = {
   User,
@@ -16,4 +17,5 @@ module.exports = {
   Product,
   Vendor,
   Order,
+  Alert,
 };

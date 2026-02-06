@@ -39,13 +39,33 @@ const vendorSchema = new mongoose.Schema(
     },
 
     /**
-     * Array of products this vendor supplies
-     * References Product model
+     * Vendor onboarding status
+     * PENDING → awaiting owner approval
+     * APPROVED → active vendor
+     * REJECTED → denied by owner
+     */
+    status: {
+      type: String,
+      enum: ['PENDING', 'APPROVED', 'REJECTED'],
+      default: 'PENDING',
+    },
+
+    /**
+     * Manager who submitted the vendor request
+     */
+    submittedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+    },
+
+    /**
+     * Array of product names this vendor supplies
      */
     productsSupplied: [
       {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Product',
+        type: String,
+        trim: true,
       },
     ],
 
@@ -111,6 +131,7 @@ const vendorSchema = new mongoose.Schema(
 
     /**
      * Whether vendor is approved for ordering
+     * Derived from status === 'APPROVED'
      */
     isApproved: {
       type: Boolean,

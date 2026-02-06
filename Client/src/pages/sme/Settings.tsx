@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -11,9 +11,33 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Building2, Bell, Shield, Users, Save } from 'lucide-react';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
+import { Building2, Bell, Shield, Users, Save, UserPlus, Loader2 } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
+import { teamApi, TeamMember } from '@/lib/api';
+import { useToast } from '@/hooks/use-toast';
 
 export default function Settings() {
+  const { user } = useAuth();
+  const { toast } = useToast();
+  const [isInviteOpen, setIsInviteOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
+  const [isLoadingTeam, setIsLoadingTeam] = useState(true);
+  const [inviteForm, setInviteForm] = useState({
+    name: '',
+    email: '',
+    password: '',
+    role: 'MANAGER' as 'MANAGER' | 'VENDOR',
+  });
   const [settings, setSettings] = useState({
     businessName: 'HealthPlus Pharmacy',
     industry: 'pharmacy',
@@ -28,6 +52,77 @@ export default function Settings() {
     deliveryAlerts: true,
     approvalReminders: true,
   });
+
+  // Fetch team members on mount
+  useEffect(() => {
+    fetchTeamMembers();
+  }, []);
+
+  const fetchTeamMembers = async () => {
+    try {
+      setIsLoadingTeam(true);
+      const response = await teamApi.getTeamMembers();
+      setTeamMembers(response.members);
+    } catch (error) {
+      console.error('Failed to fetch team members:', error);
+    } finally {
+      setIsLoadingTeam(false);
+    }
+  };
+
+  const handleInviteMember = async () => {
+    if (!inviteForm.name || !inviteForm.email || !inviteForm.password) {
+      toast({
+        title: 'Validation Error',
+        description: 'Please fill in all fields',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      await teamApi.inviteMember(inviteForm);
+      
+      toast({
+        title: 'Success!',
+        description: `${inviteForm.name} has been invited as ${inviteForm.role === 'MANAGER' ? 'Inventory Manager' : 'Vendor'}`,
+      });
+
+      // Refresh team list
+      fetchTeamMembers();
+      
+      // Reset form and close dialog
+      setInviteForm({ name: '', email: '', password: '', role: 'MANAGER' });
+      setIsInviteOpen(false);
+    } catch (error) {
+      toast({
+        title: 'Invite Failed',
+        description: error instanceof Error ? error.message : 'Failed to invite team member',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const getRoleLabel = (role: string) => {
+    switch (role) {
+      case 'OWNER': return 'SME Owner';
+      case 'MANAGER': return 'Inventory Manager';
+      case 'VENDOR': return 'Vendor';
+      default: return role;
+    }
+  };
+
+  const getRoleBadgeStyle = (role: string) => {
+    switch (role) {
+      case 'OWNER': return 'bg-primary/10 text-primary';
+      case 'MANAGER': return 'bg-blue-500/10 text-blue-600';
+      case 'VENDOR': return 'bg-green-500/10 text-green-600';
+      default: return 'bg-muted text-muted-foreground';
+    }
+  };
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -227,33 +322,130 @@ export default function Settings() {
 
         <TabsContent value="team">
           <div className="card-dashboard">
-            <h2 className="text-lg font-semibold text-foreground mb-6">Team Management</h2>
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-lg font-semibold text-foreground">Team Management</h2>
+              <Dialog open={isInviteOpen} onOpenChange={setIsInviteOpen}>
+                <DialogTrigger asChild>
+                  <Button>
+                    <UserPlus className="h-4 w-4" />
+                    Invite Team Member
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-[425px]">
+                  <DialogHeader>
+                    <DialogTitle>Invite Team Member</DialogTitle>
+                    <DialogDescription>
+                      Add a new team member to your business. They will be able to log in with the credentials you set.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="grid gap-4 py-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="invite-name">Full Name</Label>
+                      <Input
+                        id="invite-name"
+                        placeholder="Enter team member's name"
+                        value={inviteForm.name}
+                        onChange={(e) => setInviteForm({ ...inviteForm, name: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="invite-email">Email</Label>
+                      <Input
+                        id="invite-email"
+                        type="email"
+                        placeholder="member@company.com"
+                        value={inviteForm.email}
+                        onChange={(e) => setInviteForm({ ...inviteForm, email: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="invite-password">Temporary Password</Label>
+                      <Input
+                        id="invite-password"
+                        type="text"
+                        placeholder="Set a temporary password"
+                        value={inviteForm.password}
+                        onChange={(e) => setInviteForm({ ...inviteForm, password: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="invite-role">Role</Label>
+                      <Select
+                        value={inviteForm.role}
+                        onValueChange={(value) => setInviteForm({ ...inviteForm, role: value as 'MANAGER' | 'VENDOR' })}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select a role" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="MANAGER">Inventory Manager</SelectItem>
+                          <SelectItem value="VENDOR">Vendor</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground">
+                        {inviteForm.role === 'MANAGER'
+                          ? 'Can manage inventory, orders, vendors, and view alerts'
+                          : 'Can view orders, manage deliveries, and update product catalog'}
+                      </p>
+                    </div>
+                  </div>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setIsInviteOpen(false)} disabled={isLoading}>
+                      Cancel
+                    </Button>
+                    <Button onClick={handleInviteMember} disabled={isLoading}>
+                      {isLoading ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Creating...
+                        </>
+                      ) : (
+                        <>
+                          <UserPlus className="h-4 w-4" />
+                          Create Member
+                        </>
+                      )}
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            </div>
+
             <div className="space-y-4">
-              <div className="flex items-center justify-between p-4 rounded-lg border border-border">
-                <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-full bg-primary flex items-center justify-center">
-                    <span className="text-sm font-medium text-primary-foreground">JS</span>
-                  </div>
-                  <div>
-                    <p className="font-medium text-foreground">John Smith</p>
-                    <p className="text-sm text-muted-foreground">john@company.com • SME Owner</p>
-                  </div>
+              {isLoadingTeam ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                 </div>
-                <span className="text-xs px-2 py-1 rounded bg-primary/10 text-primary font-medium">Admin</span>
-              </div>
-              <div className="flex items-center justify-between p-4 rounded-lg border border-border">
-                <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-full bg-secondary flex items-center justify-center">
-                    <span className="text-sm font-medium text-secondary-foreground">SJ</span>
-                  </div>
-                  <div>
-                    <p className="font-medium text-foreground">Sarah Johnson</p>
-                    <p className="text-sm text-muted-foreground">sarah@company.com • Inventory Manager</p>
-                  </div>
+              ) : teamMembers.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <Users className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                  <p>No team members yet. Invite your first team member!</p>
                 </div>
-                <span className="text-xs px-2 py-1 rounded bg-muted text-muted-foreground font-medium">Member</span>
-              </div>
-              <Button variant="outline">Invite Team Member</Button>
+              ) : (
+                teamMembers.map((member) => (
+                  <div
+                    key={member.id}
+                    className="flex items-center justify-between p-4 rounded-lg border border-border"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="h-10 w-10 rounded-full bg-primary flex items-center justify-center">
+                        <span className="text-sm font-medium text-primary-foreground">
+                          {member.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)}
+                        </span>
+                      </div>
+                      <div>
+                        <p className="font-medium text-foreground">{member.name}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {member.email} &bull; {getRoleLabel(member.role)}
+                        </p>
+                      </div>
+                    </div>
+                    <span className={`text-xs px-2 py-1 rounded font-medium ${getRoleBadgeStyle(member.role)}`}>
+                      {member.role === 'OWNER' ? 'Admin' : 'Member'}
+                    </span>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         </TabsContent>

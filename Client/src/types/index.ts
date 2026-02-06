@@ -22,13 +22,21 @@ export interface Product {
   id: string;
   name: string;
   sku: string;
-  stock: number;
-  minStock: number;
-  vendorId: string;
+  category: string;
+  costPrice: number;
+  sellingPrice: number;
+  currentStock: number;
+  minThreshold: number;
+  vendorId: string | null;
   vendorName: string;
   status: 'in-stock' | 'low-stock' | 'out-of-stock';
-  price: number;
-  category: string;
+  description?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  // Kept for backward compat with any remaining mock references
+  stock?: number;
+  minStock?: number;
+  price?: number;
 }
 
 export interface Vendor {
@@ -91,6 +99,11 @@ export interface Alert {
   title: string;
   message: string;
   severity: 'info' | 'warning' | 'error';
+  productId?: string;
+  productName?: string;
+  productSku?: string;
+  currentStock?: number;
+  minThreshold?: number;
   createdAt: string;
   read: boolean;
 }

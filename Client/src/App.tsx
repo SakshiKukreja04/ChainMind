@@ -3,10 +3,11 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { AuthProvider } from "@/contexts/AuthContext";
 
 // Layouts
 import { PublicLayout } from "@/components/layout/PublicLayout";
-import { DashboardLayout } from "@/components/layout/DashboardLayout";
+import { ProtectedLayout } from "@/components/layout/ProtectedLayout";
 
 // Public Pages
 import Home from "@/pages/Home";
@@ -44,56 +45,58 @@ const queryClient = new QueryClient();
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <Routes>
-          {/* Public Routes */}
-          <Route element={<PublicLayout />}>
-            <Route path="/" element={<Home />} />
-            <Route path="/login" element={<Login />} />
-            <Route path="/signup" element={<SignUp />} />
-          </Route>
+    <AuthProvider>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <BrowserRouter>
+          <Routes>
+            {/* Public Routes */}
+            <Route element={<PublicLayout />}>
+              <Route path="/" element={<Home />} />
+              <Route path="/login" element={<Login />} />
+              <Route path="/signup" element={<SignUp />} />
+            </Route>
 
-          {/* SME Owner Routes */}
-          <Route element={<DashboardLayout role="sme-owner" userName="John Smith" />}>
-            <Route path="/sme/dashboard" element={<SMEDashboard />} />
-            <Route path="/sme/analytics" element={<Analytics />} />
-            <Route path="/sme/ai-insights" element={<AIInsights />} />
-            <Route path="/sme/approvals" element={<Approvals />} />
-            <Route path="/sme/blockchain" element={<BlockchainAudit />} />
-            <Route path="/sme/reports" element={<SMEReports />} />
-            <Route path="/sme/settings" element={<SMESettings />} />
-          </Route>
+            {/* SME Owner Routes */}
+            <Route element={<ProtectedLayout allowedRoles={['OWNER']} />}>
+              <Route path="/sme/dashboard" element={<SMEDashboard />} />
+              <Route path="/sme/analytics" element={<Analytics />} />
+              <Route path="/sme/ai-insights" element={<AIInsights />} />
+              <Route path="/sme/approvals" element={<Approvals />} />
+              <Route path="/sme/blockchain" element={<BlockchainAudit />} />
+              <Route path="/sme/reports" element={<SMEReports />} />
+              <Route path="/sme/settings" element={<SMESettings />} />
+            </Route>
 
-          {/* Inventory Manager Routes */}
-          <Route element={<DashboardLayout role="inventory-manager" userName="Sarah Johnson" />}>
-            <Route path="/inventory/dashboard" element={<InventoryDashboard />} />
-            <Route path="/inventory/products" element={<Products />} />
-            <Route path="/inventory/orders" element={<Orders />} />
-            <Route path="/inventory/vendors" element={<Vendors />} />
-            <Route path="/inventory/alerts" element={<Alerts />} />
-            <Route path="/inventory/ai-suggestions" element={<AISuggestions />} />
-            <Route path="/inventory/reports" element={<SMEReports />} />
-            <Route path="/inventory/profile" element={<InventoryProfile />} />
-          </Route>
+            {/* Inventory Manager Routes */}
+            <Route element={<ProtectedLayout allowedRoles={['MANAGER']} />}>
+              <Route path="/inventory/dashboard" element={<InventoryDashboard />} />
+              <Route path="/inventory/products" element={<Products />} />
+              <Route path="/inventory/orders" element={<Orders />} />
+              <Route path="/inventory/vendors" element={<Vendors />} />
+              <Route path="/inventory/alerts" element={<Alerts />} />
+              <Route path="/inventory/ai-suggestions" element={<AISuggestions />} />
+              <Route path="/inventory/reports" element={<SMEReports />} />
+              <Route path="/inventory/profile" element={<InventoryProfile />} />
+            </Route>
 
-          {/* Vendor Routes */}
-          <Route element={<DashboardLayout role="vendor" userName="MediSupply Co" />}>
-            <Route path="/vendor/orders" element={<VendorOrders />} />
-            <Route path="/vendor/delivery" element={<DeliveryStatus />} />
-            <Route path="/vendor/catalog" element={<Catalog />} />
-            <Route path="/vendor/performance" element={<Performance />} />
-            <Route path="/vendor/blockchain" element={<VendorBlockchain />} />
-            <Route path="/vendor/profile" element={<VendorProfile />} />
-          </Route>
+            {/* Vendor Routes */}
+            <Route element={<ProtectedLayout allowedRoles={['VENDOR']} />}>
+              <Route path="/vendor/orders" element={<VendorOrders />} />
+              <Route path="/vendor/delivery" element={<DeliveryStatus />} />
+              <Route path="/vendor/catalog" element={<Catalog />} />
+              <Route path="/vendor/performance" element={<Performance />} />
+              <Route path="/vendor/blockchain" element={<VendorBlockchain />} />
+              <Route path="/vendor/profile" element={<VendorProfile />} />
+            </Route>
 
-          {/* 404 */}
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </BrowserRouter>
-    </TooltipProvider>
+            {/* 404 */}
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </BrowserRouter>
+      </TooltipProvider>
+    </AuthProvider>
   </QueryClientProvider>
 );
 

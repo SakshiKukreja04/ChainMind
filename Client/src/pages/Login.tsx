@@ -3,21 +3,63 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Boxes, Eye, EyeOff } from 'lucide-react';
+import { Boxes, Eye, EyeOff, Loader2 } from 'lucide-react';
+import { authApi } from '@/lib/api';
+import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/contexts/AuthContext';
+import { roleDefaultDashboard } from '@/components/layout/ProtectedLayout';
 
 export default function Login() {
   const navigate = useNavigate();
+  const { toast } = useToast();
+  const { login } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const [formData, setFormData] = useState({
     email: '',
     password: '',
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Mock login - in real app would validate credentials
-    // For demo, navigate to SME dashboard
-    navigate('/sme/dashboard');
+    
+    if (!formData.email || !formData.password) {
+      toast({
+        title: 'Validation Error',
+        description: 'Please enter email and password',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const response = await authApi.login({
+        email: formData.email,
+        password: formData.password,
+      });
+
+      // Store in auth context (also persists to localStorage)
+      login(response.token, response.user as any);
+
+      toast({
+        title: 'Welcome back!',
+        description: 'Login successful',
+      });
+
+      // Redirect based on role
+      const role = response.user.role;
+      const targetDashboard = roleDefaultDashboard[role] || '/sme/dashboard';
+      navigate(targetDashboard);
+    } catch (error) {
+      toast({
+        title: 'Login Failed',
+        description: error instanceof Error ? error.message : 'Invalid credentials',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -74,8 +116,15 @@ export default function Login() {
               </div>
             </div>
 
-            <Button type="submit" className="w-full" size="lg">
-              Sign In
+            <Button type="submit" className="w-full" size="lg" disabled={isLoading}>
+              {isLoading ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Signing in...
+                </>
+              ) : (
+                'Sign In'
+              )}
             </Button>
           </form>
 

@@ -4,6 +4,7 @@
  */
 
 const bcrypt = require('bcrypt');
+const mongoose = require('mongoose');
 const { User, Business } = require('../models');
 const { generateToken, verifyToken } = require('../utils/jwt');
 
@@ -71,34 +72,45 @@ const signup = async (req, res) => {
     // Hash password using bcrypt
     const passwordHash = await bcrypt.hash(password, 10);
 
-    // Create new user
+    // For OWNER role, create the Business FIRST, then create the User with businessId
+    let business = null;
+    let userBusinessId = businessId || null;
+
+    if (role === 'OWNER') {
+      // Extract business details from request (frontend sends these)
+      const { businessName, industry, location, currency } = req.body;
+
+      // Create a temporary ObjectId for the owner (will be updated after user creation)
+      const tempOwnerId = new mongoose.Types.ObjectId();
+
+      business = new Business({
+        businessName: businessName || `${name}'s Business`,
+        industry: industry || 'Not specified',
+        location: location || 'Not specified',
+        currency: currency || 'USD',
+        ownerId: tempOwnerId, // Temporary, will be updated
+        isActive: true,
+      });
+      await business.save();
+      userBusinessId = business._id;
+    }
+
+    // Create new user with businessId already set
     const newUser = new User({
       name: name.trim(),
       email: email.toLowerCase(),
       passwordHash: passwordHash,
       role: role,
-      businessId: businessId || null,
+      businessId: userBusinessId,
       isActive: true,
     });
 
     await newUser.save();
 
-    // If OWNER, create associated business
-    let business = null;
-    if (role === 'OWNER') {
-      business = new Business({
-        businessName: `${name}'s Business`,
-        industry: 'Not specified',
-        location: 'Not specified',
-        currency: 'USD',
-        ownerId: newUser._id,
-        isActive: true,
-      });
+    // If OWNER, update the business with the correct ownerId
+    if (role === 'OWNER' && business) {
+      business.ownerId = newUser._id;
       await business.save();
-
-      // Link business to user
-      newUser.businessId = business._id;
-      await newUser.save();
     }
 
     // Generate JWT token
@@ -251,8 +263,162 @@ const verify = async (req, res) => {
   }
 };
 
+/**
+ * INVITE TEAM MEMBER - Create a new team member (MANAGER or VENDOR)
+ * POST /api/auth/invite
+ * Headers: Authorization: Bearer <token>
+ * 
+ * Request body:
+ * {
+ *   "name": "Team Member Name",
+ *   "email": "member@example.com",
+ *   "password": "tempPassword123",
+ *   "role": "MANAGER" | "VENDOR"
+ * }
+ * 
+ * Only OWNER can invite team members
+ */
+const inviteTeamMember = async (req, res) => {
+  try {
+    const { name, email, password, role } = req.body;
+    const inviterId = req.user.userId;
+
+    // Get the inviter (must be OWNER)
+    const inviter = await User.findById(inviterId);
+    if (!inviter) {
+      return res.status(404).json({
+        success: false,
+        message: 'Inviter not found',
+      });
+    }
+
+    if (inviter.role !== 'OWNER') {
+      return res.status(403).json({
+        success: false,
+        message: 'Only business owners can invite team members',
+      });
+    }
+
+    // Validation
+    if (!name || !email || !password || !role) {
+      return res.status(400).json({
+        success: false,
+        message: 'Name, email, password, and role are required',
+      });
+    }
+
+    // Validate role (only MANAGER or VENDOR can be invited)
+    if (!['MANAGER', 'VENDOR'].includes(role)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid role. Can only invite MANAGER or VENDOR',
+      });
+    }
+
+    // Check if email already exists
+    const existingUser = await User.findOne({ email: email.toLowerCase() });
+    if (existingUser) {
+      return res.status(409).json({
+        success: false,
+        message: 'Email already registered',
+      });
+    }
+
+    // Hash password
+    const passwordHash = await bcrypt.hash(password, 10);
+
+    // Create new team member with inviter's businessId
+    const newMember = new User({
+      name: name.trim(),
+      email: email.toLowerCase(),
+      passwordHash: passwordHash,
+      role: role,
+      businessId: inviter.businessId,
+      isActive: true,
+    });
+
+    await newMember.save();
+
+    console.log(`✓ Team member invited: ${email} (${role}) by ${inviter.email}`);
+
+    res.status(201).json({
+      success: true,
+      message: 'Team member created successfully',
+      member: {
+        id: newMember._id,
+        name: newMember.name,
+        email: newMember.email,
+        role: newMember.role,
+        businessId: newMember.businessId,
+      },
+    });
+  } catch (error) {
+    console.error('Invite Error:', error.message);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to invite team member',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * GET TEAM MEMBERS - Get all team members for a business
+ * GET /api/auth/team
+ * Headers: Authorization: Bearer <token>
+ * 
+ * Only OWNER can view team members
+ */
+const getTeamMembers = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+
+    // Get the user
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found',
+      });
+    }
+
+    if (user.role !== 'OWNER') {
+      return res.status(403).json({
+        success: false,
+        message: 'Only business owners can view team members',
+      });
+    }
+
+    // Get all team members with same businessId
+    const teamMembers = await User.find({ 
+      businessId: user.businessId,
+      isActive: true 
+    }).select('-passwordHash');
+
+    res.status(200).json({
+      success: true,
+      members: teamMembers.map(member => ({
+        id: member._id,
+        name: member.name,
+        email: member.email,
+        role: member.role,
+        createdAt: member.createdAt,
+      })),
+    });
+  } catch (error) {
+    console.error('Get Team Error:', error.message);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get team members',
+      error: error.message,
+    });
+  }
+};
+
 module.exports = {
   signup,
   login,
   verify,
+  inviteTeamMember,
+  getTeamMembers,
 };

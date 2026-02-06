@@ -7,6 +7,8 @@ const express = require('express');
 const cors = require('cors');
 const healthRoutes = require('./routes/health.routes');
 const authRoutes = require('./routes/auth.routes');
+const productRoutes = require('./routes/product.routes');
+const vendorRoutes = require('./routes/vendor.routes');
 
 const app = express();
 
@@ -22,6 +24,8 @@ app.use(express.urlencoded({ extended: true }));
  */
 app.use('/', healthRoutes);
 app.use('/api/auth', authRoutes);
+app.use('/api/products', productRoutes);
+app.use('/api/vendors', vendorRoutes);
 
 /**
  * 404 Handler

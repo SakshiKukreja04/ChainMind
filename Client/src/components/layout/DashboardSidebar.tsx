@@ -1,4 +1,4 @@
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { 
   LayoutDashboard, 
@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import type { UserRole } from '@/types';
 import { useState } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface SidebarItem {
   name: string;
@@ -74,6 +75,8 @@ interface DashboardSidebarProps {
 
 export function DashboardSidebar({ role, userName }: DashboardSidebarProps) {
   const location = useLocation();
+  const navigate = useNavigate();
+  const { logout } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
   const menu = menuByRole[role];
 
@@ -81,6 +84,11 @@ export function DashboardSidebar({ role, userName }: DashboardSidebarProps) {
     'sme-owner': 'SME Owner',
     'inventory-manager': 'Inventory Manager',
     'vendor': 'Vendor',
+  };
+
+  const handleLogout = () => {
+    logout();
+    navigate('/login');
   };
 
   return (
@@ -147,16 +155,16 @@ export function DashboardSidebar({ role, userName }: DashboardSidebarProps) {
 
       {/* Logout */}
       <div className="p-2 border-t border-sidebar-border">
-        <Link
-          to="/"
+        <button
+          onClick={handleLogout}
           className={cn(
-            "sidebar-item text-sidebar-foreground/70 hover:text-sidebar-foreground",
+            "sidebar-item text-sidebar-foreground/70 hover:text-sidebar-foreground w-full",
             collapsed && "justify-center px-2"
           )}
         >
           <LogOut className="h-5 w-5 shrink-0" />
           {!collapsed && <span>Logout</span>}
-        </Link>
+        </button>
       </div>
     </aside>
   );
