@@ -34,6 +34,7 @@ export default function Orders() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('');
+  const [currency, setCurrency] = useState('USD');
   const { toast } = useToast();
   const { on } = useSocket();
 
@@ -42,6 +43,7 @@ export default function Orders() {
       setLoading(true);
       const res = await orderApi.list(statusFilter || undefined);
       setOrders(res.orders);
+      if (res.currency) setCurrency(res.currency);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to load orders';
       toast({ title: 'Error', description: msg, variant: 'destructive' });
@@ -190,7 +192,9 @@ export default function Orders() {
                       <td className="py-3 px-4 text-sm text-muted-foreground">{order.vendorName || '—'}</td>
                       <td className="py-3 px-4 text-sm font-medium">{order.quantity}</td>
                       <td className="py-3 px-4 text-sm font-medium">
-                        ${order.totalValue?.toLocaleString() || '—'}
+                        {order.totalValue != null
+                          ? order.totalValue.toLocaleString(undefined, { style: 'currency', currency })
+                          : '—'}
                       </td>
                       <td className="py-3 px-4">
                         {order.aiRecommendation ? (

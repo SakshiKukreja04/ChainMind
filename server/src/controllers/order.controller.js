@@ -7,13 +7,14 @@
  *   4. List all orders (Owner or Manager)
  */
 
-const { Order, Product, AiSuggestion, Vendor, VendorProduct, Alert } = require('../models');
+const { Order, Product, AiSuggestion, Vendor, VendorProduct, Alert, Business, CooperativeBuy } = require('../models');
 const User = require('../models/User.model');
 const { getSocket } = require('../sockets');
 const { updateVendorScore, recalculateReliabilityScore } = require('../services/vendorScore.service');
 const { recordAuditEntry } = require('../services/auditTrail.service');
 const { onOrderDelivered, onOrderApproved, onOrderRejected, onReorderSubmitted } = require('../services/reorderIntelligenceService');
 const { autoGenerateSuggestionIfNeeded } = require('../services/autoSuggestionService');
+const { createNotification } = require('../services/notificationService');
 
 /**
  * Helper: resolve the Vendor entity linked to a VENDOR user
@@ -218,17 +219,23 @@ const listOrders = async (req, res) => {
     const filter = { businessId: req.user.businessId };
     if (status) filter.status = status;
 
-    const orders = await Order.find(filter)
-      .sort({ createdAt: -1 })
-      .populate('productId', 'name sku currentStock costPrice sellingPrice')
-      .populate('vendorId', 'name contact leadTimeDays')
-      .populate('createdBy', 'name email')
-      .populate('approvedBy', 'name email')
-      .lean();
+    const [orders, business] = await Promise.all([
+      Order.find(filter)
+        .sort({ createdAt: -1 })
+        .populate('productId', 'name sku currentStock costPrice sellingPrice')
+        .populate('vendorId', 'name contact leadTimeDays')
+        .populate('createdBy', 'name email')
+        .populate('approvedBy', 'name email')
+        .lean(),
+      Business.findById(req.user.businessId).select('currency').lean(),
+    ]);
+
+    const currency = business?.currency || 'USD';
 
     return res.json({
       success: true,
       count: orders.length,
+      currency,
       orders: orders.map((o) => ({
         id: o._id,
         productId: o.productId?._id || o.productId,
@@ -451,6 +458,7 @@ const getVendorOrders = async (req, res) => {
       .populate('vendorId', 'name contact leadTimeDays')
       .populate('createdBy', 'name email')
       .populate('approvedBy', 'name email')
+      .populate('cooperativeBuyId', 'productName totalQuantity participants status estimatedSavingsPercent')
       .lean();
 
     return res.json({
@@ -475,10 +483,20 @@ const getVendorOrders = async (req, res) => {
         delayReason: o.delayReason || null,
         newExpectedDate: o.newExpectedDate || null,
         vendorAction: o.vendorAction || null,
+        cooperativeBuyId: o.cooperativeBuyId?._id || o.cooperativeBuyId || null,
+        cooperativeBuy: o.cooperativeBuyId && typeof o.cooperativeBuyId === 'object' ? {
+          id: o.cooperativeBuyId._id,
+          productName: o.cooperativeBuyId.productName,
+          totalQuantity: o.cooperativeBuyId.totalQuantity,
+          participantCount: o.cooperativeBuyId.participants?.length || 0,
+          status: o.cooperativeBuyId.status,
+          estimatedSavingsPercent: o.cooperativeBuyId.estimatedSavingsPercent,
+        } : null,
         createdBy: o.createdBy,
         approvedBy: o.approvedBy,
         createdAt: o.createdAt,
         updatedAt: o.updatedAt,
+        notes: o.notes || null,
       })),
     });
   } catch (err) {
@@ -816,6 +834,28 @@ const vendorOrderAction = async (req, res) => {
       onOrderRejected(order, order.businessId, order.rejectionReason);
     }
 
+    // ── Cooperative Buy: notify all participants on vendor ACCEPT ────
+    if (action === 'ACCEPT' && order.cooperativeBuyId) {
+      try {
+        const coop = await CooperativeBuy.findById(order.cooperativeBuyId).lean();
+        if (coop) {
+          for (const p of coop.participants) {
+            await createNotification({
+              userId: p.ownerId,
+              businessId: p.businessId,
+              type: 'ORDER_STATUS',
+              title: 'Cooperative Order Confirmed by Vendor',
+              message: `${order.vendorId?.name || 'Vendor'} has accepted the cooperative bulk order for ${order.quantity} units of ${order.productId?.name || coop.productName}. Expected delivery: ${order.expectedDeliveryDate ? new Date(order.expectedDeliveryDate).toLocaleDateString() : 'TBD'}.`,
+              referenceId: coop._id,
+              referenceType: 'CooperativeBuy',
+            });
+          }
+        }
+      } catch (coopErr) {
+        console.warn('Cooperative ACCEPT notification error:', coopErr.message);
+      }
+    }
+
     return res.json({
       success: true,
       message: `Order ${action.toLowerCase().replace('_', ' ')} successful`,
@@ -933,6 +973,48 @@ const updateDeliveryStatus = async (req, res) => {
     // Reorder Intelligence: fire all DELIVERED side-effects
     if (deliveryStatus === 'DELIVERED') {
       onOrderDelivered(order, order.businessId);
+    }
+
+    // ── Cooperative Buy: final delivery notifications + status update ──
+    if (deliveryStatus === 'DELIVERED' && order.cooperativeBuyId) {
+      try {
+        const coop = await CooperativeBuy.findById(order.cooperativeBuyId);
+        if (coop) {
+          coop.status = 'DELIVERED';
+          await coop.save();
+
+          const vendorName = order.vendorId?.name || 'Vendor';
+          const productName = order.productId?.name || coop.productName;
+          const pricePerUnit = order.totalValue && order.quantity
+            ? (order.totalValue / order.quantity).toFixed(2)
+            : 'N/A';
+          const savings = coop.estimatedSavingsPercent || 0;
+          const deliveryDate = order.actualDeliveryDate
+            ? new Date(order.actualDeliveryDate).toLocaleDateString()
+            : new Date().toLocaleDateString();
+
+          for (const p of coop.participants) {
+            const isInitiator = String(p.ownerId) === String(coop.initiatedBy);
+            await createNotification({
+              userId: p.ownerId,
+              businessId: p.businessId,
+              type: 'ORDER_STATUS',
+              title: isInitiator
+                ? 'Cooperative Buy Complete!'
+                : 'Cooperative Order Delivered',
+              message: `${vendorName} has delivered ${order.quantity} units of ${productName}. ` +
+                `Price: $${pricePerUnit}/unit. ` +
+                (savings > 0 ? `Estimated savings: ${savings}%. ` : '') +
+                `Delivered on ${deliveryDate}. ` +
+                `Your share: ${p.requestedQty} units.`,
+              referenceId: coop._id,
+              referenceType: 'CooperativeBuy',
+            });
+          }
+        }
+      } catch (coopErr) {
+        console.warn('Cooperative DELIVERED notification error:', coopErr.message);
+      }
     }
 
     return res.json({
@@ -1156,6 +1238,64 @@ const vendorUpdateOrderStatus = async (req, res) => {
           order.productId._id || order.productId,
           order.businessId,
         ).catch((e) => console.warn('Auto-suggestion check failed:', e.message));
+      }
+    }
+
+    // ── Cooperative Buy: notify participants on ACCEPTED / DELIVERED ──
+    if (order.cooperativeBuyId && (newStatus === 'ACCEPTED' || newStatus === 'DELIVERED')) {
+      try {
+        const coop = newStatus === 'DELIVERED'
+          ? await CooperativeBuy.findById(order.cooperativeBuyId)
+          : await CooperativeBuy.findById(order.cooperativeBuyId).lean();
+
+        if (coop) {
+          if (newStatus === 'DELIVERED') {
+            coop.status = 'DELIVERED';
+            await coop.save();
+          }
+
+          const vendorName = order.vendorId?.name || 'Vendor';
+          const productName = order.productId?.name || coop.productName;
+
+          for (const p of coop.participants) {
+            const isInitiator = String(p.ownerId) === String(coop.initiatedBy);
+
+            if (newStatus === 'ACCEPTED') {
+              await createNotification({
+                userId: p.ownerId,
+                businessId: p.businessId,
+                type: 'ORDER_STATUS',
+                title: 'Cooperative Order Confirmed by Vendor',
+                message: `${vendorName} has accepted the cooperative bulk order for ${order.quantity} units of ${productName}. Expected delivery: ${order.expectedDeliveryDate ? new Date(order.expectedDeliveryDate).toLocaleDateString() : 'TBD'}.`,
+                referenceId: coop._id,
+                referenceType: 'CooperativeBuy',
+              });
+            } else if (newStatus === 'DELIVERED') {
+              const pricePerUnit = order.totalValue && order.quantity
+                ? (order.totalValue / order.quantity).toFixed(2)
+                : 'N/A';
+              const savings = coop.estimatedSavingsPercent || 0;
+              const deliveryDate = order.actualDeliveryDate
+                ? new Date(order.actualDeliveryDate).toLocaleDateString()
+                : new Date().toLocaleDateString();
+
+              await createNotification({
+                userId: p.ownerId,
+                businessId: p.businessId,
+                type: 'ORDER_STATUS',
+                title: isInitiator ? 'Cooperative Buy Complete!' : 'Cooperative Order Delivered',
+                message: `${vendorName} has delivered ${order.quantity} units of ${productName}. ` +
+                  `Price: $${pricePerUnit}/unit. ` +
+                  (savings > 0 ? `Estimated savings: ${savings}%. ` : '') +
+                  `Delivered on ${deliveryDate}. Your share: ${p.requestedQty} units.`,
+                referenceId: coop._id,
+                referenceType: 'CooperativeBuy',
+              });
+            }
+          }
+        }
+      } catch (coopErr) {
+        console.warn(`Cooperative ${newStatus} notification error:`, coopErr.message);
       }
     }
 

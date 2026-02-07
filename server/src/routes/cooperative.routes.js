@@ -10,6 +10,7 @@
  * POST   /api/cooperative/:id/join             – Join an existing group
  * POST   /api/cooperative/:id/approve          – Approve participation
  * POST   /api/cooperative/:id/select-vendor    – Select vendor for bulk order
+ * GET    /api/cooperative/:id/vendor-pricing/:vendorId – Get vendor pricing details
  * POST   /api/cooperative/:id/cancel           – Cancel the cooperative
  */
 
@@ -27,6 +28,7 @@ const {
   approveParticipation,
   selectVendor,
   cancelCooperative,
+  getVendorPricing,
 } = require('../controllers/cooperative.controller');
 
 /** Discover cooperative opportunities for a product */
@@ -52,6 +54,9 @@ router.post('/:id/approve', authMiddleware, ownerOnly, approveParticipation);
 
 /** Select vendor for the bulk order (initiator only) */
 router.post('/:id/select-vendor', authMiddleware, ownerOnly, selectVendor);
+
+/** Get detailed vendor pricing for a cooperative */
+router.get('/:id/vendor-pricing/:vendorId', authMiddleware, ownerOnly, getVendorPricing);
 
 /** Cancel the cooperative group (initiator only) */
 router.post('/:id/cancel', authMiddleware, ownerOnly, cancelCooperative);

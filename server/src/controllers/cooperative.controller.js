@@ -182,6 +182,19 @@ async function cancelCooperative(req, res) {
   }
 }
 
+// ─── Vendor Pricing ───────────────────────────────────────────
+
+async function getVendorPricing(req, res) {
+  try {
+    const { id, vendorId } = req.params;
+    const result = await cooperativeService.getVendorPricing(id, vendorId);
+    res.json({ success: true, data: result });
+  } catch (err) {
+    console.error('[CooperativeCtrl] getVendorPricing error:', err.message);
+    res.status(err.status || 500).json({ success: false, message: err.message });
+  }
+}
+
 module.exports = {
   discoverOpportunities,
   getOpenGroups,
@@ -192,4 +205,5 @@ module.exports = {
   approveParticipation,
   selectVendor,
   cancelCooperative,
+  getVendorPricing,
 };

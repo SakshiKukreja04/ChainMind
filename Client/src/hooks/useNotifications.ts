@@ -38,7 +38,7 @@ export function useNotifications() {
     const off = on('notification:new', (data: unknown) => {
       const notification = data as AppNotification & { _id?: string };
       // Only accept notifications addressed to the current user
-      const currentUserId = JSON.parse(localStorage.getItem('chainmind_user') || '{}')?.id;
+      const currentUserId = JSON.parse(localStorage.getItem('user') || '{}')?.id;
       if (currentUserId && notification.userId && notification.userId !== currentUserId) return;
       const normalized: AppNotification = {
         ...notification,

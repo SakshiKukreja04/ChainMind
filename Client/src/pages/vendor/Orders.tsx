@@ -23,10 +23,12 @@ import {
   RefreshCw,
   XCircle,
   AlertTriangle,
+  Users,
 } from 'lucide-react';
 
 const statusColor: Record<string, string> = {
   APPROVED: 'bg-blue-100 text-blue-800',
+  ACCEPTED: 'bg-amber-100 text-amber-800',
   CONFIRMED: 'bg-amber-100 text-amber-800',
   DISPATCHED: 'bg-purple-100 text-purple-800',
   IN_TRANSIT: 'bg-indigo-100 text-indigo-800',
@@ -196,6 +198,12 @@ export default function VendorOrders() {
                   <Badge className={statusColor[order.status] || 'bg-gray-100 text-gray-800'}>
                     {order.status.replace(/_/g, ' ')}
                   </Badge>
+                  {order.cooperativeBuyId && (
+                    <Badge className="bg-emerald-100 text-emerald-800 text-xs flex items-center gap-1">
+                      <Users className="h-3 w-3" />
+                      Cooperative Buy{order.cooperativeBuy ? ` (${order.cooperativeBuy.participantCount} businesses)` : ''}
+                    </Badge>
+                  )}
                 </div>
                 <div className="flex flex-wrap gap-4 mt-2 text-sm text-muted-foreground">
                   <span>Qty: <strong>{order.quantity}</strong></span>
@@ -218,6 +226,9 @@ export default function VendorOrders() {
                   <p className="text-xs text-muted-foreground mt-1">
                     AI confidence: {Math.round(order.aiRecommendation.confidence * 100)}%
                   </p>
+                )}
+                {order.notes && (
+                  <p className="text-xs text-muted-foreground mt-1 italic">{order.notes}</p>
                 )}
               </div>
 

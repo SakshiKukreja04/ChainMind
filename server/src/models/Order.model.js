@@ -197,6 +197,16 @@ const orderSchema = new mongoose.Schema(
     },
 
     /**
+     * Reference to cooperative buying group (if this order is from a coop buy)
+     * Links to CooperativeBuy model. Null for regular orders.
+     */
+    cooperativeBuyId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'CooperativeBuy',
+      default: null,
+    },
+
+    /**
      * Reference to business this order belongs to
      * Links to Business model
      */
@@ -246,5 +256,6 @@ orderSchema.index({ status: 1 }); // Filter by status
 orderSchema.index({ createdBy: 1 }); // User orders
 orderSchema.index({ businessId: 1, status: 1 }); // Business pending orders
 orderSchema.index({ vendorId: 1, status: 1 }); // Vendor + status queries
+orderSchema.index({ cooperativeBuyId: 1 }); // Cooperative buy orders
 
 module.exports = mongoose.model('Order', orderSchema);

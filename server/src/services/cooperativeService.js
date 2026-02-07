@@ -26,7 +26,7 @@
  */
 
 const CooperativeBuy = require('../models/CooperativeBuy.model');
-const { Product, Business, Vendor, VendorProduct } = require('../models');
+const { Product, Business, Vendor, VendorProduct, Order } = require('../models');
 const { generateSpecHash } = require('../utils/productSpecHash');
 const { createNotification } = require('./notificationService');
 
@@ -102,18 +102,35 @@ async function discoverOpportunities(productId, businessId) {
     status: 'APPROVED',
   }).lean();
   const approvedVendorIds = approvedVendors.map((v) => String(v._id));
-  const vendorProducts = await VendorProduct.find({
+
+  // Try matching VendorProducts by category first, then by product name
+  let vendorProducts = await VendorProduct.find({
     vendorId: { $in: approvedVendorIds },
-    category: product.category,
+    category: { $regex: new RegExp(`^${escapeRegex(product.category)}$`, 'i') },
     isActive: true,
   }).lean();
+
+  // Broaden: if no category match, search by product name similarity
+  if (vendorProducts.length === 0) {
+    const nameWords = product.name.split(/\s+/).filter((w) => w.length > 2);
+    if (nameWords.length > 0) {
+      const namePattern = nameWords.map(escapeRegex).join('|');
+      vendorProducts = await VendorProduct.find({
+        vendorId: { $in: approvedVendorIds },
+        name: { $regex: new RegExp(namePattern, 'i') },
+        isActive: true,
+      }).lean();
+    }
+  }
 
   // If no VendorProducts match by category, fall back to matching approved vendors directly
   const vendorMap = Object.fromEntries(approvedVendors.map((v) => [String(v._id), v]));
 
+  // Fallback price from the product's costPrice
+  const fallbackUnitPrice = product.costPrice || product.sellingPrice || 0;
+
   let vendorOptions;
   if (vendorProducts.length > 0) {
-    const vendorIds = [...new Set(vendorProducts.map((vp) => String(vp.vendorId)))];
     vendorOptions = vendorProducts
       .filter((vp) => vendorMap[String(vp.vendorId)])
       .map((vp) => {
@@ -129,13 +146,13 @@ async function discoverOpportunities(productId, businessId) {
       };
     });
   } else {
-    // Fallback: offer approved vendors even without VendorProduct catalog entries
+    // Fallback: offer approved vendors with product costPrice as estimate
     vendorOptions = approvedVendors.map((v) => ({
       vendorId: v._id,
       vendorProductId: null,
       vendorName: v.name,
-      unitPrice: 0,
-      bulkPrice: 0,
+      unitPrice: fallbackUnitPrice,
+      bulkPrice: fallbackUnitPrice * 0.9,
       minOrderQty: 1,
       leadTimeDays: v.leadTimeDays || 7,
     }));
@@ -252,13 +269,31 @@ async function createOrJoin({ productId, businessId, ownerId, requestedQty, coop
     status: 'APPROVED',
   }).lean();
   const approvedVendorIds = approvedVendors.map((v) => String(v._id));
-  const vendorProducts = await VendorProduct.find({
+
+  // Try matching VendorProducts by category first, then by product name
+  let vendorProducts = await VendorProduct.find({
     vendorId: { $in: approvedVendorIds },
-    category: product.category,
+    category: { $regex: new RegExp(`^${escapeRegex(product.category)}$`, 'i') },
     isActive: true,
   }).lean();
 
+  // Broaden: if no category match, search by product name similarity
+  if (vendorProducts.length === 0) {
+    const nameWords = product.name.split(/\s+/).filter((w) => w.length > 2);
+    if (nameWords.length > 0) {
+      const namePattern = nameWords.map(escapeRegex).join('|');
+      vendorProducts = await VendorProduct.find({
+        vendorId: { $in: approvedVendorIds },
+        name: { $regex: new RegExp(namePattern, 'i') },
+        isActive: true,
+      }).lean();
+    }
+  }
+
   const vendorMap = Object.fromEntries(approvedVendors.map((v) => [String(v._id), v]));
+
+  // Fallback price from the product's costPrice
+  const fallbackUnitPrice = product.costPrice || product.sellingPrice || 0;
 
   let vendorSuggestions;
   if (vendorProducts.length > 0) {
@@ -277,13 +312,13 @@ async function createOrJoin({ productId, businessId, ownerId, requestedQty, coop
         };
       });
   } else {
-    // Fallback: offer approved vendors even without VendorProduct catalog entries
+    // Fallback: offer approved vendors with product costPrice as estimate
     vendorSuggestions = approvedVendors.map((v) => ({
       vendorId: v._id,
       vendorProductId: null,
       vendorName: v.name,
-      unitPrice: 0,
-      bulkPrice: 0,
+      unitPrice: fallbackUnitPrice,
+      bulkPrice: fallbackUnitPrice * 0.9,
       minOrderQty: 1,
       leadTimeDays: v.leadTimeDays || 7,
     }));
@@ -410,6 +445,45 @@ async function selectVendor(cooperativeId, vendorId, ownerId) {
   coop.selectedVendorId = vendorId;
   coop.selectedVendorProductId = suggestion?.vendorProductId || null;
   coop.status = 'ORDERED';
+
+  // ── Create an actual Order document so the vendor sees it ──
+  const initiator = coop.participants.find(
+    (p) => String(p.ownerId) === String(ownerId),
+  );
+  // Use initiator's product to determine pricing
+  const initiatorProduct = initiator
+    ? await Product.findById(initiator.productId).lean()
+    : null;
+
+  // Calculate unit price: prefer vendor suggestion price, then product cost
+  const unitPrice = suggestion?.bulkPrice
+    || suggestion?.unitPrice
+    || initiatorProduct?.costPrice
+    || 0;
+  const totalValue = unitPrice * coop.totalQuantity;
+
+  // Calculate expected delivery date from vendor lead time
+  const vendorDoc = await Vendor.findById(vendorId).lean();
+  const leadDays = vendorDoc?.leadTimeDays || suggestion?.leadTimeDays || 7;
+  const expectedDeliveryDate = new Date();
+  expectedDeliveryDate.setDate(expectedDeliveryDate.getDate() + leadDays);
+
+  const order = await Order.create({
+    productId: initiator?.productId || coop.participants[0]?.productId,
+    vendorId: vendorId,
+    vendorProductId: coop.selectedVendorProductId || null,
+    quantity: coop.totalQuantity,
+    status: 'APPROVED',
+    totalValue,
+    expectedDeliveryDate,
+    cooperativeBuyId: coop._id,
+    businessId: initiator?.businessId || coop.initiatedByBusiness,
+    createdBy: ownerId,
+    approvedBy: ownerId,
+    notes: `Cooperative Bulk Order – ${coop.productName} (${coop.participants.length} businesses)`,
+  });
+
+  coop.orderId = order._id;
   await coop.save();
 
   // Notify all participants
@@ -419,7 +493,7 @@ async function selectVendor(cooperativeId, vendorId, ownerId) {
       businessId: p.businessId,
       type: 'ORDER_STATUS',
       title: 'Cooperative Bulk Order Placed',
-      message: `A bulk order for ${coop.totalQuantity} units of ${coop.productName} has been placed with ${vendorName || 'selected vendor'}.`,
+      message: `A bulk order for ${coop.totalQuantity} units of ${coop.productName} has been placed with ${vendorName || 'selected vendor'}. Order #${order._id.toString().slice(-6).toUpperCase()}.`,
       referenceId: coop._id,
       referenceType: 'CooperativeBuy',
     });
@@ -491,16 +565,45 @@ async function getById(cooperativeId) {
 
     const approvedVendorIds = approvedVendors.map((v) => String(v._id));
 
-    // Try matching VendorProducts by category
-    const vendorProducts = await VendorProduct.find({
+    // Try matching VendorProducts by category first
+    let vendorProducts = await VendorProduct.find({
       vendorId: { $in: approvedVendorIds },
       category: { $regex: new RegExp(`^${escapeRegex(coop.category)}$`, 'i') },
       isActive: true,
     }).lean();
 
-    console.log(`[CooperativeService] getById: found ${vendorProducts.length} vendor products for category "${coop.category}"`);
+    // Broaden: if no category match, search by product name similarity
+    if (vendorProducts.length === 0) {
+      const nameWords = coop.productName.split(/\s+/).filter((w) => w.length > 2);
+      if (nameWords.length > 0) {
+        const namePattern = nameWords.map(escapeRegex).join('|');
+        vendorProducts = await VendorProduct.find({
+          vendorId: { $in: approvedVendorIds },
+          name: { $regex: new RegExp(namePattern, 'i') },
+          isActive: true,
+        }).lean();
+      }
+    }
+
+    // If still no matches, try ALL vendor products from these vendors
+    if (vendorProducts.length === 0) {
+      vendorProducts = await VendorProduct.find({
+        vendorId: { $in: approvedVendorIds },
+        isActive: true,
+      }).lean();
+    }
+
+    console.log(`[CooperativeService] getById: found ${vendorProducts.length} vendor products for "${coop.productName}" (category: "${coop.category}")`);
 
     const vendorMap = Object.fromEntries(approvedVendors.map((v) => [String(v._id), v]));
+
+    // Compute a fallback price from participant products' costPrice
+    const participantCostPrices = coop.participants
+      .map((p) => (typeof p.productId === 'object' ? p.productId.costPrice : null))
+      .filter(Boolean);
+    const avgCostPrice = participantCostPrices.length > 0
+      ? participantCostPrices.reduce((a, b) => a + b, 0) / participantCostPrices.length
+      : 0;
 
     let freshSuggestions;
     if (vendorProducts.length > 0) {
@@ -527,8 +630,7 @@ async function getById(cooperativeId) {
           };
         });
     } else {
-      // Fallback: list all approved vendors even without catalog entries
-      // Deduplicate by vendor name (same vendor in multiple businesses)
+      // Fallback: list all approved vendors with estimated pricing from participant costPrice
       const seen = new Set();
       freshSuggestions = approvedVendors
         .filter((v) => {
@@ -541,8 +643,8 @@ async function getById(cooperativeId) {
           vendorId: v._id,
           vendorProductId: null,
           vendorName: v.name,
-          unitPrice: 0,
-          bulkPrice: 0,
+          unitPrice: avgCostPrice,
+          bulkPrice: avgCostPrice > 0 ? avgCostPrice * 0.9 : 0,
           minOrderQty: 1,
           leadTimeDays: v.leadTimeDays || 7,
         }));
@@ -585,6 +687,85 @@ async function discoverOpenGroups(businessId, { page = 1, limit = 20 } = {}) {
   ]);
 
   return { groups, total, page, limit };
+}
+
+// ─── Vendor Pricing ───────────────────────────────────────────
+
+/**
+ * Get detailed pricing for a specific vendor in a cooperative group.
+ * Searches VendorProduct catalog by product name, category, and vendor.
+ *
+ * @param {string} cooperativeId
+ * @param {string} vendorId
+ * @returns {Object} pricing details
+ */
+async function getVendorPricing(cooperativeId, vendorId) {
+  const coop = await CooperativeBuy.findById(cooperativeId)
+    .populate('participants.productId', 'name sku category costPrice sellingPrice')
+    .lean();
+  if (!coop) throw Object.assign(new Error('Cooperative group not found'), { status: 404 });
+
+  const vendor = await Vendor.findById(vendorId).lean();
+  if (!vendor) throw Object.assign(new Error('Vendor not found'), { status: 404 });
+
+  // Search VendorProduct catalog for this vendor & product
+  // 1. Try exact category match
+  let vendorProduct = await VendorProduct.findOne({
+    vendorId,
+    category: { $regex: new RegExp(`^${escapeRegex(coop.category)}$`, 'i') },
+    isActive: true,
+  }).sort({ unitPrice: 1 }).lean();
+
+  // 2. If no match, try product name similarity
+  if (!vendorProduct) {
+    const nameWords = coop.productName.split(/\s+/).filter((w) => w.length > 2);
+    if (nameWords.length > 0) {
+      const namePattern = nameWords.map(escapeRegex).join('|');
+      vendorProduct = await VendorProduct.findOne({
+        vendorId,
+        name: { $regex: new RegExp(namePattern, 'i') },
+        isActive: true,
+      }).sort({ unitPrice: 1 }).lean();
+    }
+  }
+
+  // 3. If still no match, try any product from this vendor
+  if (!vendorProduct) {
+    vendorProduct = await VendorProduct.findOne({
+      vendorId,
+      isActive: true,
+    }).sort({ unitPrice: 1 }).lean();
+  }
+
+  // Compute fallback from participant costPrices
+  const participantCostPrices = coop.participants
+    .map((p) => (typeof p.productId === 'object' ? p.productId.costPrice : null))
+    .filter(Boolean);
+  const avgCostPrice = participantCostPrices.length > 0
+    ? participantCostPrices.reduce((a, b) => a + b, 0) / participantCostPrices.length
+    : 0;
+
+  const unitPrice = vendorProduct ? vendorProduct.unitPrice : avgCostPrice;
+  const savingsPercent = coop.estimatedSavingsPercent || 10;
+  const bulkPrice = unitPrice * (1 - savingsPercent / 100);
+  const totalCost = bulkPrice * coop.totalQuantity;
+  const totalSavings = (unitPrice - bulkPrice) * coop.totalQuantity;
+
+  return {
+    vendorId: vendor._id,
+    vendorName: vendor.name,
+    vendorProductId: vendorProduct?._id || null,
+    vendorProductName: vendorProduct?.name || null,
+    unitPrice,
+    bulkPrice,
+    minOrderQty: vendorProduct?.minOrderQty || 1,
+    leadTimeDays: vendorProduct?.leadTimeDays || vendor.leadTimeDays || 7,
+    totalQuantity: coop.totalQuantity,
+    totalCost,
+    totalSavings,
+    savingsPercent,
+    priceSource: vendorProduct ? 'catalog' : 'estimated',
+  };
 }
 
 // ─── Cancel ───────────────────────────────────────────────────
@@ -651,5 +832,6 @@ module.exports = {
   getById,
   discoverOpenGroups,
   cancelCooperative,
+  getVendorPricing,
   estimateSavings,
 };

@@ -6,7 +6,7 @@
 const express = require('express');
 const router = express.Router();
 const { authMiddleware } = require('../middleware/auth.middleware');
-const { ownerOnly, managerOnly, ownerOrManager } = require('../middleware/role.middleware');
+const { ownerOnly, managerOnly, ownerOrManager, vendorOnly } = require('../middleware/role.middleware');
 const {
   submitVendor,
   getPendingVendors,
@@ -15,7 +15,25 @@ const {
   approveVendor,
   rejectVendor,
   resendVendorCredentials,
+  getMyProfile,
+  updateMyProfile,
 } = require('../controllers/vendor.controller');
+
+// ── Vendor self-service routes ──────────────────────────────────
+
+/**
+ * GET /api/vendors/my-profile
+ * Vendor sees their own profile
+ * Access: VENDOR only
+ */
+router.get('/my-profile', authMiddleware, vendorOnly, getMyProfile);
+
+/**
+ * PUT /api/vendors/my-profile
+ * Vendor updates their own profile
+ * Access: VENDOR only
+ */
+router.put('/my-profile', authMiddleware, vendorOnly, updateMyProfile);
 
 // ── Specific routes first (before /:id) ────────────────────────
 

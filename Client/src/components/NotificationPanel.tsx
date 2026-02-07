@@ -115,7 +115,6 @@ export function NotificationPanel({ role }: { role: UserRole }) {
         <button
           type="button"
           className="relative inline-flex items-center justify-center h-10 w-10 rounded-lg text-sm font-medium hover:bg-accent hover:text-accent-foreground transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-          onClick={() => setOpen((prev) => !prev)}
         >
           <Bell className="h-5 w-5" />
           {unreadCount > 0 && (

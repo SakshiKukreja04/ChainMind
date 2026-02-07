@@ -3,7 +3,7 @@
  * Onboarding workflow, approval, listing, and scoring
  */
 
-const { Vendor, User } = require('../models');
+const { Vendor, User, Business } = require('../models');
 const { getSocket } = require('../sockets');
 const bcrypt = require('bcrypt');
 const crypto = require('crypto');
@@ -472,6 +472,122 @@ const resendVendorCredentials = async (req, res) => {
   }
 };
 
+/**
+ * GET /api/vendor/my-profile
+ * Get the logged-in vendor's own profile
+ * Access: VENDOR only
+ */
+const getMyProfile = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.userId).lean();
+    if (!user || !user.vendorEntityId) {
+      return res.status(404).json({ success: false, message: 'Vendor entity not linked to your account' });
+    }
+
+    const vendor = await Vendor.findById(user.vendorEntityId)
+      .populate('businessId', 'businessName location industry currency')
+      .lean();
+
+    if (!vendor) {
+      return res.status(404).json({ success: false, message: 'Vendor record not found' });
+    }
+
+    res.json({
+      success: true,
+      vendor: {
+        id: vendor._id,
+        name: vendor.name,
+        contact: vendor.contact,
+        email: vendor.email || user.email,
+        phone: user.phone || vendor.contact,
+        address: vendor.address || null,
+        leadTimeDays: vendor.leadTimeDays,
+        productsSupplied: vendor.productsSupplied,
+        status: vendor.status,
+        reliabilityScore: vendor.reliabilityScore,
+        totalOrders: vendor.totalOrders || 0,
+        paymentTerms: vendor.paymentTerms,
+        rating: vendor.rating,
+        performanceMetrics: vendor.performanceMetrics,
+        business: vendor.businessId ? {
+          id: vendor.businessId._id,
+          name: vendor.businessId.businessName,
+          location: vendor.businessId.location,
+          industry: vendor.businessId.industry,
+        } : null,
+        createdAt: vendor.createdAt,
+        updatedAt: vendor.updatedAt,
+      },
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone || null,
+      },
+    });
+  } catch (error) {
+    console.error('Get My Vendor Profile Error:', error.message);
+    res.status(500).json({ success: false, message: 'Failed to fetch vendor profile', error: error.message });
+  }
+};
+
+/**
+ * PUT /api/vendor/my-profile
+ * Update the logged-in vendor's own profile fields
+ * Access: VENDOR only
+ */
+const updateMyProfile = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.userId);
+    if (!user || !user.vendorEntityId) {
+      return res.status(404).json({ success: false, message: 'Vendor entity not linked to your account' });
+    }
+
+    const vendor = await Vendor.findById(user.vendorEntityId);
+    if (!vendor) {
+      return res.status(404).json({ success: false, message: 'Vendor record not found' });
+    }
+
+    const { name, contact, email, phone, address, productsSupplied, paymentTerms } = req.body;
+
+    if (name) vendor.name = name.trim();
+    if (contact) vendor.contact = contact.trim();
+    if (email) vendor.email = email.trim().toLowerCase();
+    if (address !== undefined) vendor.address = address;
+    if (productsSupplied) vendor.productsSupplied = productsSupplied;
+    if (paymentTerms) vendor.paymentTerms = paymentTerms;
+
+    await vendor.save();
+
+    // Also update user fields if changed
+    if (name) user.name = name.trim();
+    if (phone) user.phone = phone;
+    if (email) user.email = email.trim().toLowerCase();
+    await user.save();
+
+    res.json({
+      success: true,
+      message: 'Profile updated successfully',
+      vendor: {
+        id: vendor._id,
+        name: vendor.name,
+        contact: vendor.contact,
+        email: vendor.email,
+        address: vendor.address,
+        leadTimeDays: vendor.leadTimeDays,
+        productsSupplied: vendor.productsSupplied,
+        reliabilityScore: vendor.reliabilityScore,
+        totalOrders: vendor.totalOrders,
+        paymentTerms: vendor.paymentTerms,
+        rating: vendor.rating,
+      },
+    });
+  } catch (error) {
+    console.error('Update Vendor Profile Error:', error.message);
+    res.status(500).json({ success: false, message: 'Failed to update vendor profile', error: error.message });
+  }
+};
+
 module.exports = {
   submitVendor,
   getPendingVendors,
@@ -480,4 +596,6 @@ module.exports = {
   approveVendor,
   rejectVendor,
   resendVendorCredentials,
+  getMyProfile,
+  updateMyProfile,
 };

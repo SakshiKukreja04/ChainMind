@@ -47,6 +47,18 @@ export default function CooperativeBuyDetail() {
   // Vendor select dialog
   const [vendorDialogOpen, setVendorDialogOpen] = useState(false);
   const [selectedVendorId, setSelectedVendorId] = useState('');
+  const [vendorPricing, setVendorPricing] = useState<{
+    unitPrice: number;
+    bulkPrice: number;
+    totalCost: number;
+    totalSavings: number;
+    savingsPercent: number;
+    minOrderQty: number;
+    leadTimeDays: number;
+    vendorProductName: string | null;
+    priceSource: 'catalog' | 'estimated';
+  } | null>(null);
+  const [pricingLoading, setPricingLoading] = useState(false);
 
   // ── Fetch ──────────────────────────────────────────────────
 
@@ -69,6 +81,42 @@ export default function CooperativeBuyDetail() {
   }
 
   useEffect(() => { fetchDetail(); }, [id]);
+
+  // Fetch vendor pricing when a vendor is selected in dialog
+  useEffect(() => {
+    if (!selectedVendorId || !id) {
+      setVendorPricing(null);
+      return;
+    }
+    let cancelled = false;
+    setPricingLoading(true);
+    cooperativeApi.getVendorPricing(id, selectedVendorId)
+      .then((res) => {
+        if (!cancelled && res.success) setVendorPricing(res.data);
+      })
+      .catch(() => {
+        // Fall back to vendorSuggestions data
+        if (!cancelled) {
+          const vs = coop?.vendorSuggestions.find((v) => String(v.vendorId) === selectedVendorId);
+          if (vs) {
+            const totalQty = coop?.totalQuantity || 0;
+            setVendorPricing({
+              unitPrice: vs.unitPrice,
+              bulkPrice: vs.bulkPrice,
+              totalCost: vs.bulkPrice * totalQty,
+              totalSavings: (vs.unitPrice - vs.bulkPrice) * totalQty,
+              savingsPercent: vs.unitPrice > 0 ? Math.round(((vs.unitPrice - vs.bulkPrice) / vs.unitPrice) * 100) : 0,
+              minOrderQty: vs.minOrderQty,
+              leadTimeDays: vs.leadTimeDays,
+              vendorProductName: null,
+              priceSource: 'estimated',
+            });
+          }
+        }
+      })
+      .finally(() => { if (!cancelled) setPricingLoading(false); });
+    return () => { cancelled = true; };
+  }, [selectedVendorId, id]);
 
   // ── Actions ────────────────────────────────────────────────
 
@@ -460,7 +508,7 @@ export default function CooperativeBuyDetail() {
       </Dialog>
 
       {/* Vendor Selection Dialog */}
-      <Dialog open={vendorDialogOpen} onOpenChange={setVendorDialogOpen}>
+      <Dialog open={vendorDialogOpen} onOpenChange={(open) => { setVendorDialogOpen(open); if (!open) { setSelectedVendorId(''); setVendorPricing(null); } }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Select Vendor for Bulk Order</DialogTitle>
@@ -479,23 +527,50 @@ export default function CooperativeBuyDetail() {
                 <option value="">Select a vendor...</option>
                 {coop.vendorSuggestions.map((vs) => (
                   <option key={vs.vendorId} value={vs.vendorId}>
-                    {vs.vendorName} — Bulk: ${vs.bulkPrice.toFixed(2)}/unit, Lead: {vs.leadTimeDays}d
+                    {vs.vendorName} — Lead: {vs.leadTimeDays}d
                   </option>
                 ))}
               </select>
             </div>
-            {selectedVendorId && (() => {
-              const vs = coop.vendorSuggestions.find((v) => String(v.vendorId) === selectedVendorId);
-              if (!vs) return null;
-              return (
-                <div className="rounded-lg border p-3 bg-muted/50 text-sm space-y-1">
-                  <p><span className="text-muted-foreground">Unit price:</span> ${vs.unitPrice.toFixed(2)}</p>
-                  <p><span className="text-muted-foreground">Bulk price:</span> <span className="text-success font-medium">${vs.bulkPrice.toFixed(2)}</span></p>
-                  <p><span className="text-muted-foreground">Total cost:</span> <span className="font-semibold">${(vs.bulkPrice * coop.totalQuantity).toFixed(2)}</span></p>
-                  <p><span className="text-muted-foreground">You save:</span> <span className="text-success font-medium">${((vs.unitPrice - vs.bulkPrice) * coop.totalQuantity).toFixed(2)}</span></p>
+            {selectedVendorId && (
+              pricingLoading ? (
+                <div className="flex items-center justify-center py-4">
+                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                  <span className="ml-2 text-sm text-muted-foreground">Loading pricing...</span>
                 </div>
-              );
-            })()}
+              ) : vendorPricing ? (
+                <div className="rounded-lg border p-4 bg-muted/50 text-sm space-y-2">
+                  {vendorPricing.vendorProductName && (
+                    <p className="text-xs text-muted-foreground mb-2">
+                      Matched catalog: <span className="font-medium text-foreground">{vendorPricing.vendorProductName}</span>
+                    </p>
+                  )}
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Unit price:</span>
+                    <span className="font-medium">${vendorPricing.unitPrice.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Bulk price ({vendorPricing.savingsPercent}% off):</span>
+                    <span className="text-success font-semibold">${vendorPricing.bulkPrice.toFixed(2)}</span>
+                  </div>
+                  <div className="border-t border-border my-2" />
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Total cost ({coop.totalQuantity} units):</span>
+                    <span className="font-bold">${vendorPricing.totalCost.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">You save:</span>
+                    <span className="text-success font-semibold">${vendorPricing.totalSavings.toFixed(2)}</span>
+                  </div>
+                  {vendorPricing.priceSource === 'estimated' && (
+                    <p className="text-xs text-warning mt-2 flex items-center gap-1">
+                      <AlertTriangle className="h-3 w-3" />
+                      Estimated pricing — actual price may vary once vendor confirms.
+                    </p>
+                  )}
+                </div>
+              ) : null
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setVendorDialogOpen(false)}>Cancel</Button>

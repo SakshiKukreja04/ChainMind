@@ -408,6 +408,27 @@ export const vendorApi = {
       body: JSON.stringify({ reason }),
     });
   },
+
+  /** Get logged-in vendor's own profile (VENDOR only) */
+  getMyProfile: (): Promise<{ success: boolean; vendor: any; user: any }> => {
+    return apiFetch<{ success: boolean; vendor: any; user: any }>('/api/vendors/my-profile');
+  },
+
+  /** Update logged-in vendor's own profile (VENDOR only) */
+  updateMyProfile: (data: {
+    name?: string;
+    contact?: string;
+    email?: string;
+    phone?: string;
+    address?: string;
+    productsSupplied?: string[];
+    paymentTerms?: string;
+  }): Promise<{ success: boolean; message: string; vendor: any }> => {
+    return apiFetch<{ success: boolean; message: string; vendor: any }>('/api/vendors/my-profile', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
 };
 
 // ── AI Demand Forecasting API ───────────────────────────────────
@@ -581,6 +602,15 @@ export interface OrderResponse {
   newExpectedDate?: string;
   vendorAction?: 'ACCEPT' | 'REJECT' | 'REQUEST_DELAY';
   notes?: string;
+  cooperativeBuyId?: string | null;
+  cooperativeBuy?: {
+    id: string;
+    productName: string;
+    totalQuantity: number;
+    participantCount: number;
+    status: string;
+    estimatedSavingsPercent: number;
+  } | null;
   createdBy?: { name: string; email: string };
   approvedBy?: { name: string; email: string };
   createdAt: string;
@@ -590,6 +620,7 @@ export interface OrderResponse {
 export interface OrderListResponse {
   success: boolean;
   count: number;
+  currency?: string;
   orders: OrderResponse[];
 }
 
@@ -1168,4 +1199,25 @@ export const cooperativeApi = {
       `/api/cooperative/${id}/cancel`,
       { method: 'POST' },
     ),
+
+  /** Get detailed vendor pricing for a cooperative */
+  getVendorPricing: (id: string, vendorId: string) =>
+    apiFetch<{
+      success: boolean;
+      data: {
+        vendorId: string;
+        vendorName: string;
+        vendorProductId: string | null;
+        vendorProductName: string | null;
+        unitPrice: number;
+        bulkPrice: number;
+        minOrderQty: number;
+        leadTimeDays: number;
+        totalQuantity: number;
+        totalCost: number;
+        totalSavings: number;
+        savingsPercent: number;
+        priceSource: 'catalog' | 'estimated';
+      };
+    }>(`/api/cooperative/${id}/vendor-pricing/${vendorId}`),
 };

@@ -58,35 +58,42 @@ export default function Home() {
   return (
     <div className="flex flex-col">
       {/* Hero Section */}
-      <section className="relative overflow-hidden">
-        <div className="absolute inset-0 gradient-hero opacity-[0.03]" />
-        <div className="container py-20 md:py-32 relative">
+      <section className="relative overflow-hidden bg-gradient-to-br from-[hsl(224,76%,10%)] via-[hsl(224,60%,18%)] to-[hsl(170,60%,12%)] text-white">
+        {/* Animated gradient orbs */}
+        <div className="absolute inset-0 overflow-hidden">
+          <div className="absolute -top-1/2 -left-1/4 w-[600px] h-[600px] rounded-full bg-[hsl(224,76%,40%)] opacity-20 blur-[120px] animate-pulse" />
+          <div className="absolute -bottom-1/3 -right-1/4 w-[500px] h-[500px] rounded-full bg-[hsl(170,82%,35%)] opacity-20 blur-[100px] animate-pulse" style={{ animationDelay: '1s' }} />
+          <div className="absolute top-1/4 right-1/3 w-[300px] h-[300px] rounded-full bg-[hsl(200,80%,45%)] opacity-10 blur-[80px] animate-pulse" style={{ animationDelay: '2s' }} />
+        </div>
+        {/* Grid pattern overlay */}
+        <div className="absolute inset-0" style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(255,255,255,0.05) 1px, transparent 0)', backgroundSize: '40px 40px' }} />
+        <div className="container py-24 md:py-36 relative z-10">
           <div className="max-w-3xl mx-auto text-center animate-slide-up">
-            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 text-primary text-sm font-medium mb-6">
+            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/10 backdrop-blur-sm text-white/90 text-sm font-medium mb-6 border border-white/10">
               <Boxes className="h-4 w-4" />
               <span>AI-Powered Inventory Management</span>
             </div>
             
-            <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-foreground mb-6 leading-tight">
+            <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-white mb-6 leading-tight">
               Smarter Inventory,{' '}
-              <span className="text-transparent bg-clip-text gradient-hero">
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-[hsl(170,82%,55%)] to-[hsl(200,90%,65%)]">
                 Trusted Supply Chain
               </span>
             </h1>
             
-            <p className="text-lg md:text-xl text-muted-foreground mb-8 max-w-2xl mx-auto">
+            <p className="text-lg md:text-xl text-white/70 mb-8 max-w-2xl mx-auto">
               ChainMind combines AI-driven insights with blockchain verification to help 
               SMEs optimize inventory, reduce costs, and build trusted vendor relationships.
             </p>
             
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-              <Button size="xl" asChild>
+              <Button size="xl" variant="hero" asChild>
                 <Link to="/signup">
                   Get Started Free
                   <ArrowRight className="h-5 w-5" />
                 </Link>
               </Button>
-              <Button size="xl" variant="outline-primary" asChild>
+              <Button size="xl" variant="outline" className="border-white/30 text-white hover:bg-white/10 hover:text-white" asChild>
                 <Link to="/features">Learn More</Link>
               </Button>
             </div>
@@ -182,16 +189,17 @@ export default function Home() {
       </section>
 
       {/* CTA Section */}
-      <section className="py-20 bg-primary text-primary-foreground">
-        <div className="container text-center">
+      <section className="py-20 bg-gradient-to-br from-[hsl(224,76%,10%)] via-[hsl(224,60%,18%)] to-[hsl(170,60%,12%)] text-white relative overflow-hidden">
+        <div className="absolute inset-0" style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(255,255,255,0.03) 1px, transparent 0)', backgroundSize: '40px 40px' }} />
+        <div className="container text-center relative z-10">
           <h2 className="text-3xl md:text-4xl font-bold mb-4">
             Ready to Transform Your Inventory Management?
           </h2>
-          <p className="text-lg opacity-90 mb-8 max-w-2xl mx-auto">
+          <p className="text-lg text-white/70 mb-8 max-w-2xl mx-auto">
             Join thousands of SMEs who trust ChainMind for smarter, 
             more efficient supply chain operations.
           </p>
-          <Button size="xl" variant="secondary" asChild>
+          <Button size="xl" variant="hero" asChild>
             <Link to="/signup">
               Start Your Free Trial
               <ArrowRight className="h-5 w-5" />

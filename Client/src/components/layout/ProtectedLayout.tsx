@@ -2,9 +2,9 @@ import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { DashboardSidebar } from './DashboardSidebar';
 import type { UserRole } from '@/types';
-import { Bell, Search } from 'lucide-react';
+import { Search } from 'lucide-react';
 import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
+import { NotificationPanel } from '@/components/NotificationPanel';
 
 // Map backend roles to frontend UserRole type
 const roleMap: Record<string, UserRole> = {
@@ -74,12 +74,7 @@ export function ProtectedLayout({ allowedRoles }: ProtectedLayoutProps) {
             </div>
             
             <div className="flex items-center gap-3">
-              <Button variant="ghost" size="icon" className="relative">
-                <Bell className="h-5 w-5" />
-                <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-destructive text-[10px] font-medium text-destructive-foreground flex items-center justify-center">
-                  3
-                </span>
-              </Button>
+              <NotificationPanel role={frontendRole as UserRole} />
               <div className="h-8 w-8 rounded-full bg-primary flex items-center justify-center">
                 <span className="text-sm font-medium text-primary-foreground">
                   {user.name.charAt(0).toUpperCase()}
